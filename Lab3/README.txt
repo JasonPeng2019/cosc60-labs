@@ -16,8 +16,8 @@ sudo apt-get update && sudo apt-get install build-essential
   make clean        # Clean up
 
   Compile and run:
-  gcc -std=c11 -Wall packets.c my_program.c -o my_program
-  ./my_program
+   gcc -std=gnu99 -Wall packets.c main.c -o packets_test
+  ./packets_test
 
   For network operations (sending/receiving), run as root:
-  sudo ./my_program
+  sudo ./packets_test
