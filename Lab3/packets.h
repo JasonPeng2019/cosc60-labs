@@ -7,7 +7,12 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+#include <cstdlib>
+// Following only available on linux
 #include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/ip.h>
+#include <unistd.h>
 
 typedef struct packet_t
 {
@@ -19,6 +24,7 @@ typedef struct packet_t
 } packet_t;
 
 typedef struct ether{
+    packet_t packet;
     uint8_t dst_mac[6];
     uint8_t src_mac[6];
     uint8_t eth_type[2];
@@ -146,5 +152,57 @@ size_t icmp_to_bytes(const icmp_t* icmp, uint8_t* buffer, size_t buffer_size);
 size_t tcp_to_bytes(const tcp_t* tcp, uint8_t* buffer, size_t buffer_size);
 size_t udp_to_bytes(const udp_t* udp, uint8_t* buffer, size_t buffer_size);
 size_t dns_to_bytes(const dns_t* dns, uint8_t* buffer, size_t buffer_size);
+
+// show functions - display packet contents in Scapy-style format
+void ether_show(const ether_t* eth);
+void ipv4_show(const ipv4_t* ip);
+void icmp_show(const icmp_t* icmp);
+void tcp_show(const tcp_t* tcp);
+void udp_show(const udp_t* udp);
+void dns_show(const dns_t* dns);
+
+// Packet stacking functions - simulate division operator
+ether_t* stack_ether_ipv4(ether_t* eth, ipv4_t* ip);
+ipv4_t* stack_ipv4_icmp(ipv4_t* ip, icmp_t* icmp);
+ipv4_t* stack_ipv4_tcp(ipv4_t* ip, tcp_t* tcp);
+ipv4_t* stack_ipv4_udp(ipv4_t* ip, udp_t* udp);
+udp_t* stack_udp_dns(udp_t* udp, dns_t* dns);
+ether_t* stack_ether_icmp(ether_t* eth, icmp_t* icmp);
+ether_t* stack_ether_tcp(ether_t* eth, tcp_t* tcp);
+ether_t* stack_ether_udp(ether_t* eth, udp_t* udp);
+
+// Macro to simulate division operator - usage: STACK(eth, ip) instead of eth / ip
+#define STACK(layer1, layer2) _Generic((layer2), \
+    ipv4_t*: _Generic((layer1), \
+        ether_t*: stack_ether_ipv4, \
+        default: (void*)0 \
+    ), \
+    icmp_t*: _Generic((layer1), \
+        ipv4_t*: stack_ipv4_icmp, \
+        ether_t*: stack_ether_icmp, \
+        default: (void*)0 \
+    ), \
+    tcp_t*: _Generic((layer1), \
+        ipv4_t*: stack_ipv4_tcp, \
+        ether_t*: stack_ether_tcp, \
+        default: (void*)0 \
+    ), \
+    udp_t*: _Generic((layer1), \
+        ipv4_t*: stack_ipv4_udp, \
+        ether_t*: stack_ether_udp, \
+        default: (void*)0 \
+    ), \
+    dns_t*: _Generic((layer1), \
+        udp_t*: stack_udp_dns, \
+        default: (void*)0 \
+    ), \
+    default: (void*)0 \
+)((layer1), (layer2))
+
+// Raw socket functions
+int create_raw_socket();
+int send_packet(void* pkt, int packet_type);
+int send_ip(ipv4_t* ip_pkt);
+int send_ether(ether_t* eth_pkt);
 
 #endif // PACKETS_H

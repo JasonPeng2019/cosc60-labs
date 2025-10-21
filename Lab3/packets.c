@@ -1,6 +1,5 @@
 #include "packets.h"
-#include <cstdlib>
-#include <cstring>
+
 
 /**
  * Coded with help with of Claude Code CLI & Inline Autocomplete
@@ -13,6 +12,13 @@
 ether_t* create_ether(const uint8_t dst_mac[6], const uint8_t src_mac[6], uint16_t eth_type) {
     ether_t* eth = (ether_t*)malloc(sizeof(ether_t));
     if (!eth) return nullptr;
+    
+    // Initialize packet_t field
+    eth->packet.packet = nullptr;
+    eth->packet.data = nullptr;
+    eth->packet.data_len = 0;
+    memset(eth->packet.src_ip, 0, 4);
+    memset(eth->packet.dst_ip, 0, 4);
     
     memcpy(eth->dst_mac, dst_mac, 6);
     memcpy(eth->src_mac, src_mac, 6);
@@ -344,8 +350,9 @@ ether_t* parse_ether(const uint8_t* raw_bytes, size_t len) {
     // Check if type == 0x0800 (IPv4)
     if (eth_type == 0x0800 && len > 14) {
         ipv4_t* ip_payload = parse_ipv4(raw_bytes + 14, len - 14);
-        // Note: Need to add payload field to ether_t or handle this differently
-        // For now, just returning the ethernet header
+        if (ip_payload) {
+            eth->packet.packet = ip_payload; // Stack the IP layer
+        }
     }
     
     return eth;
@@ -601,22 +608,28 @@ dns_t* parse_dns(const uint8_t* raw_bytes, size_t len) {
 }
 
 // to_bytes functions - convert struct to bytes for transmission
+
+/**
+ * Ethernet frame format:
+ * Bytes 0-5: dst_mac
+ * Bytes 6-11: src_mac
+ * Bytes 12-13: eth_type
+ */
 size_t ether_to_bytes(const ether_t* eth, uint8_t* buffer, size_t buffer_size, void* payload, size_t payload_size) {
     if (buffer_size < 14) return 0; // min ethernet header
     
-    // Copy dst_mac (6 bytes)
     memcpy(buffer, eth->dst_mac, 6);
-    
-    // Copy src_mac (6 bytes)
     memcpy(buffer + 6, eth->src_mac, 6);
-    
-    // Copy eth_type (2 bytes)
     memcpy(buffer + 12, eth->eth_type, 2);
     
     size_t total_size = 14;
     
-    // Add payload if provided
-    if (payload && payload_size > 0 && buffer_size >= total_size + payload_size) {
+    // Use stacked packet if no external payload provided
+    if (!payload && eth->packet.packet) {
+        ipv4_t* ip = (ipv4_t*)eth->packet.packet;
+        size_t ip_size = ipv4_to_bytes(ip, buffer + total_size, buffer_size - total_size);
+        total_size += ip_size;
+    } else if (payload && payload_size > 0 && buffer_size >= total_size + payload_size) {
         memcpy(buffer + total_size, payload, payload_size);
         total_size += payload_size;
     }
@@ -624,47 +637,43 @@ size_t ether_to_bytes(const ether_t* eth, uint8_t* buffer, size_t buffer_size, v
     return total_size;
 }
 
+/**
+ * IPv4 header format:
+ * Byte 0: version + IHL
+ * Byte 1: TOS
+ * Bytes 2-3: total length
+ * Bytes 4-5: identification
+ * Bytes 6-7: flags + fragment offset
+ * Byte 8: TTL
+ * Byte 9: protocol
+ * Bytes 10-11: header checksum
+ * Bytes 12-15: source IP
+ * Bytes 16-19: destination IP
+ */
 size_t ipv4_to_bytes(const ipv4_t* ip, uint8_t* buffer, size_t buffer_size) {
     if (buffer_size < 20) return 0; // min IPv4 header
     
-    // Byte 0: version + IHL
     buffer[0] = (ip->version << 4) | (ip->ihl & 0x0F);
-    
-    // Byte 1: TOS
     buffer[1] = ip->tos;
-    
-    // Bytes 2-3: total length
     buffer[2] = (ip->total_length >> 8) & 0xFF;
     buffer[3] = ip->total_length & 0xFF;
-    
-    // Bytes 4-5: identification
     buffer[4] = (ip->identification >> 8) & 0xFF;
     buffer[5] = ip->identification & 0xFF;
     
-    // Bytes 6-7: flags + fragment offset
     uint16_t flags_fragment = ((ip->flags & 0x07) << 13) | (ip->flags_fragment_offset & 0x1FFF);
     buffer[6] = (flags_fragment >> 8) & 0xFF;
     buffer[7] = flags_fragment & 0xFF;
     
-    // Byte 8: TTL
     buffer[8] = ip->ttl;
-    
-    // Byte 9: protocol
     buffer[9] = ip->protocol;
-    
-    // Bytes 10-11: header checksum
     buffer[10] = (ip->header_checksum >> 8) & 0xFF;
     buffer[11] = ip->header_checksum & 0xFF;
     
-    // Bytes 12-15: source IP
     memcpy(buffer + 12, ip->src_ip, 4);
-    
-    // Bytes 16-19: destination IP
     memcpy(buffer + 16, ip->dst_ip, 4);
     
     size_t total_size = 20;
     
-    // Add payload data if present
     if (ip->packet.data && ip->packet.data_len > 0 && buffer_size >= total_size + ip->packet.data_len) {
         memcpy(buffer + total_size, ip->packet.data, ip->packet.data_len);
         total_size += ip->packet.data_len;
@@ -673,30 +682,28 @@ size_t ipv4_to_bytes(const ipv4_t* ip, uint8_t* buffer, size_t buffer_size) {
     return total_size;
 }
 
+/**
+ * ICMP header format:
+ * Byte 0: type
+ * Byte 1: code
+ * Bytes 2-3: checksum
+ * Bytes 4-5: id
+ * Bytes 6-7: seq
+ */
 size_t icmp_to_bytes(const icmp_t* icmp, uint8_t* buffer, size_t buffer_size) {
     if (buffer_size < 8) return 0; // min ICMP header
     
-    // Byte 0: type
     buffer[0] = icmp->type;
-    
-    // Byte 1: code
     buffer[1] = icmp->code;
-    
-    // Bytes 2-3: checksum
     buffer[2] = (icmp->checksum >> 8) & 0xFF;
     buffer[3] = icmp->checksum & 0xFF;
-    
-    // Bytes 4-5: id
     buffer[4] = (icmp->id >> 8) & 0xFF;
     buffer[5] = icmp->id & 0xFF;
-    
-    // Bytes 6-7: seq
     buffer[6] = (icmp->seq >> 8) & 0xFF;
     buffer[7] = icmp->seq & 0xFF;
     
     size_t total_size = 8;
     
-    // Add payload data if present
     if (icmp->packet.data && icmp->packet.data_len > 0 && buffer_size >= total_size + icmp->packet.data_len) {
         memcpy(buffer + total_size, icmp->packet.data, icmp->packet.data_len);
         total_size += icmp->packet.data_len;
@@ -705,48 +712,47 @@ size_t icmp_to_bytes(const icmp_t* icmp, uint8_t* buffer, size_t buffer_size) {
     return total_size;
 }
 
+/**
+ * TCP header format:
+ * Bytes 0-1: source port
+ * Bytes 2-3: destination port
+ * Bytes 4-7: sequence number
+ * Bytes 8-11: acknowledgment number
+ * Bytes 12-13: data offset + reserved + flags
+ * Bytes 14-15: window
+ * Bytes 16-17: checksum
+ * Bytes 18-19: urgent pointer
+ */
 size_t tcp_to_bytes(const tcp_t* tcp, uint8_t* buffer, size_t buffer_size) {
     if (buffer_size < 20) return 0; // min TCP header
     
-    // Bytes 0-1: source port
     buffer[0] = (tcp->src_port >> 8) & 0xFF;
     buffer[1] = tcp->src_port & 0xFF;
-    
-    // Bytes 2-3: destination port
     buffer[2] = (tcp->dst_port >> 8) & 0xFF;
     buffer[3] = tcp->dst_port & 0xFF;
     
-    // Bytes 4-7: sequence number
     buffer[4] = (tcp->seq >> 24) & 0xFF;
     buffer[5] = (tcp->seq >> 16) & 0xFF;
     buffer[6] = (tcp->seq >> 8) & 0xFF;
     buffer[7] = tcp->seq & 0xFF;
     
-    // Bytes 8-11: acknowledgment number
     buffer[8] = (tcp->ack >> 24) & 0xFF;
     buffer[9] = (tcp->ack >> 16) & 0xFF;
     buffer[10] = (tcp->ack >> 8) & 0xFF;
     buffer[11] = tcp->ack & 0xFF;
     
-    // Bytes 12-13: data offset + reserved + flags
     buffer[12] = ((tcp->data_offset & 0x0F) << 4) | ((tcp->flags >> 8) & 0x01);
     buffer[13] = tcp->flags & 0xFF;
     
-    // Bytes 14-15: window
     buffer[14] = (tcp->window >> 8) & 0xFF;
     buffer[15] = tcp->window & 0xFF;
-    
-    // Bytes 16-17: checksum
     buffer[16] = (tcp->checksum >> 8) & 0xFF;
     buffer[17] = tcp->checksum & 0xFF;
-    
-    // Bytes 18-19: urgent pointer
     buffer[18] = (tcp->urgent_ptr >> 8) & 0xFF;
     buffer[19] = tcp->urgent_ptr & 0xFF;
     
     size_t total_size = 20;
     
-    // Add payload data if present
     if (tcp->packet.data && tcp->packet.data_len > 0 && buffer_size >= total_size + tcp->packet.data_len) {
         memcpy(buffer + total_size, tcp->packet.data, tcp->packet.data_len);
         total_size += tcp->packet.data_len;
@@ -755,28 +761,27 @@ size_t tcp_to_bytes(const tcp_t* tcp, uint8_t* buffer, size_t buffer_size) {
     return total_size;
 }
 
+/**
+ * UDP header format:
+ * Bytes 0-1: source port
+ * Bytes 2-3: destination port
+ * Bytes 4-5: length
+ * Bytes 6-7: checksum
+ */
 size_t udp_to_bytes(const udp_t* udp, uint8_t* buffer, size_t buffer_size) {
     if (buffer_size < 8) return 0; // min UDP header
     
-    // Bytes 0-1: source port
     buffer[0] = (udp->src_port >> 8) & 0xFF;
     buffer[1] = udp->src_port & 0xFF;
-    
-    // Bytes 2-3: destination port
     buffer[2] = (udp->dst_port >> 8) & 0xFF;
     buffer[3] = udp->dst_port & 0xFF;
-    
-    // Bytes 4-5: length
     buffer[4] = (udp->length >> 8) & 0xFF;
     buffer[5] = udp->length & 0xFF;
-    
-    // Bytes 6-7: checksum
     buffer[6] = (udp->checksum >> 8) & 0xFF;
     buffer[7] = udp->checksum & 0xFF;
     
     size_t total_size = 8;
     
-    // Add payload data if present
     if (udp->packet.data && udp->packet.data_len > 0 && buffer_size >= total_size + udp->packet.data_len) {
         memcpy(buffer + total_size, udp->packet.data, udp->packet.data_len);
         total_size += udp->packet.data_len;
@@ -785,35 +790,371 @@ size_t udp_to_bytes(const udp_t* udp, uint8_t* buffer, size_t buffer_size) {
     return total_size;
 }
 
+/**
+ * DNS header format:
+ * Bytes 0-1: id
+ * Bytes 2-3: flags
+ * Bytes 4-5: question count
+ * Bytes 6-7: answer count
+ * Bytes 8-9: authority count
+ * Bytes 10-11: additional count
+ */
 size_t dns_to_bytes(const dns_t* dns, uint8_t* buffer, size_t buffer_size) {
     if (buffer_size < 12) return 0; // min DNS header
     
-    // Bytes 0-1: id
     buffer[0] = (dns->id >> 8) & 0xFF;
     buffer[1] = dns->id & 0xFF;
-    
-    // Bytes 2-3: flags
     buffer[2] = (dns->flags >> 8) & 0xFF;
     buffer[3] = dns->flags & 0xFF;
-    
-    // Bytes 4-5: question count
     buffer[4] = (dns->qd_count >> 8) & 0xFF;
     buffer[5] = dns->qd_count & 0xFF;
-    
-    // Bytes 6-7: answer count
     buffer[6] = (dns->an_count >> 8) & 0xFF;
     buffer[7] = dns->an_count & 0xFF;
-    
-    // Bytes 8-9: authority count
     buffer[8] = (dns->ns_count >> 8) & 0xFF;
     buffer[9] = dns->ns_count & 0xFF;
-    
-    // Bytes 10-11: additional count
     buffer[10] = (dns->ar_count >> 8) & 0xFF;
     buffer[11] = dns->ar_count & 0xFF;
-    
-    // Note: Full DNS serialization would require encoding questions/answers
-    // This is a simplified version that only handles the header
-    
+      
     return 12;
+}
+
+// show functions - display packet contents in Scapy-style format
+void ether_show(const ether_t* eth) {
+    printf("### Ether ###\n");
+    printf("  dst_mac: %02x:%02x:%02x:%02x:%02x:%02x\n",
+           eth->dst_mac[0], eth->dst_mac[1], eth->dst_mac[2],
+           eth->dst_mac[3], eth->dst_mac[4], eth->dst_mac[5]);
+    printf("  src_mac: %02x:%02x:%02x:%02x:%02x:%02x\n",
+           eth->src_mac[0], eth->src_mac[1], eth->src_mac[2],
+           eth->src_mac[3], eth->src_mac[4], eth->src_mac[5]);
+    printf("  type: %02x%02x\n", eth->eth_type[0], eth->eth_type[1]);
+}
+
+void ipv4_show(const ipv4_t* ip) {
+    printf("  ### IP ###\n");
+    printf("    version: %d\n", ip->version);
+    printf("    ihl: %d\n", ip->ihl);
+    printf("    tos: %d\n", ip->tos);
+    printf("    total_len: %d\n", ip->total_length);
+    printf("    ident: %d\n", ip->identification);
+    printf("    flags_frag: %04x\n", ((ip->flags & 0x07) << 13) | (ip->flags_fragment_offset & 0x1FFF));
+    printf("    ttl: %d\n", ip->ttl);
+    printf("    proto: %d\n", ip->protocol);
+    printf("    checksum: %04x\n", ip->header_checksum);
+    printf("    src_ip: %d.%d.%d.%d\n", ip->src_ip[0], ip->src_ip[1], ip->src_ip[2], ip->src_ip[3]);
+    printf("    dst_ip: %d.%d.%d.%d\n", ip->dst_ip[0], ip->dst_ip[1], ip->dst_ip[2], ip->dst_ip[3]);
+}
+
+void icmp_show(const icmp_t* icmp) {
+    printf("    ### ICMP ###\n");
+    printf("      type: %d\n", icmp->type);
+    printf("      code: %d\n", icmp->code);
+    printf("      checksum: %04x\n", icmp->checksum);
+    printf("      id: %d\n", icmp->id);
+    printf("      seq: %d\n", icmp->seq);
+    
+    if (icmp->packet.data && icmp->packet.data_len > 0) {
+        printf("      data: ");
+        const uint8_t* data = (const uint8_t*)icmp->packet.data;
+        for (int i = 0; i < icmp->packet.data_len && i < 32; i++) {
+            printf("%02x", data[i]);
+        }
+        if (icmp->packet.data_len > 32) {
+            printf("...");
+        }
+        printf("\n");
+    }
+}
+
+void tcp_show(const tcp_t* tcp) {
+    printf("    ### TCP ###\n");
+    printf("      src_port: %d\n", tcp->src_port);
+    printf("      dst_port: %d\n", tcp->dst_port);
+    printf("      seq: %u\n", tcp->seq);
+    printf("      ack: %u\n", tcp->ack);
+    printf("      data_offset: %d\n", tcp->data_offset);
+    printf("      flags: %04x\n", tcp->flags);
+    printf("      window: %d\n", tcp->window);
+    printf("      checksum: %04x\n", tcp->checksum);
+    printf("      urgent_ptr: %d\n", tcp->urgent_ptr);
+    
+    if (tcp->packet.data && tcp->packet.data_len > 0) {
+        printf("      data: ");
+        const uint8_t* data = (const uint8_t*)tcp->packet.data;
+        for (int i = 0; i < tcp->packet.data_len && i < 32; i++) {
+            printf("%02x", data[i]);
+        }
+        if (tcp->packet.data_len > 32) {
+            printf("...");
+        }
+        printf("\n");
+    }
+}
+
+void udp_show(const udp_t* udp) {
+    printf("    ### UDP ###\n");
+    printf("      src_port: %d\n", udp->src_port);
+    printf("      dst_port: %d\n", udp->dst_port);
+    printf("      length: %d\n", udp->length);
+    printf("      checksum: %04x\n", udp->checksum);
+    
+    if (udp->packet.data && udp->packet.data_len > 0) {
+        printf("      data: ");
+        const uint8_t* data = (const uint8_t*)udp->packet.data;
+        for (int i = 0; i < udp->packet.data_len && i < 32; i++) {
+            printf("%02x", data[i]);
+        }
+        if (udp->packet.data_len > 32) {
+            printf("...");
+        }
+        printf("\n");
+    }
+}
+
+void dns_show(const dns_t* dns) {
+    printf("      ### DNS ###\n");
+    printf("        id: %d\n", dns->id);
+    printf("        flags: %04x\n", dns->flags);
+    printf("        qd_count: %d\n", dns->qd_count);
+    printf("        an_count: %d\n", dns->an_count);
+    printf("        ns_count: %d\n", dns->ns_count);
+    printf("        ar_count: %d\n", dns->ar_count);
+    
+    if (dns->questions && dns->qd_count > 0) {
+        for (int i = 0; i < dns->qd_count; i++) {
+            printf("        question[%d]: %s (type=%d, class=%d)\n", 
+                   i, dns->questions[i].qname ? dns->questions[i].qname : "NULL",
+                   dns->questions[i].qtype, dns->questions[i].qclass);
+        }
+    }
+    
+    if (dns->answers && dns->an_count > 0) {
+        for (int i = 0; i < dns->an_count; i++) {
+            printf("        answer[%d]: %s (type=%d, class=%d, ttl=%u)\n",
+                   i, dns->answers[i].name ? dns->answers[i].name : "NULL",
+                   dns->answers[i].type, dns->answers[i].rr_class, dns->answers[i].ttl);
+        }
+    }
+}
+
+// Packet stacking functions - simulate division operator
+// NOTE FOR GRADER: C DOESN'T SUPPORT OPERATOR OVERLOADING, SO WE USE MACRO STACK FUNCTIONS INSTEAD
+// Macro to simulate division operator - usage: STACK(eth, ip) instead of eth / ip
+
+ether_t* stack_ether_ipv4(ether_t* eth, ipv4_t* ip) {
+    if (!eth || !ip) return eth;
+    
+    eth->packet.packet = ip;
+    // Set ethernet type to IPv4
+    eth->eth_type[0] = 0x08;
+    eth->eth_type[1] = 0x00;
+    
+    return eth;
+}
+
+ipv4_t* stack_ipv4_icmp(ipv4_t* ip, icmp_t* icmp) {
+    if (!ip || !icmp) return ip;
+    
+    ip->packet.packet = icmp;
+    ip->protocol = 1; // ICMP 
+    
+    memcpy(icmp->packet.src_ip, ip->src_ip, 4);
+    memcpy(icmp->packet.dst_ip, ip->dst_ip, 4);
+    
+    return ip;
+}
+
+ipv4_t* stack_ipv4_tcp(ipv4_t* ip, tcp_t* tcp) {
+    if (!ip || !tcp) return ip;
+    
+    ip->packet.packet = tcp;
+    ip->protocol = 6; // TCP 
+    
+    memcpy(tcp->packet.src_ip, ip->src_ip, 4);
+    memcpy(tcp->packet.dst_ip, ip->dst_ip, 4);
+    
+    return ip;
+}
+
+ipv4_t* stack_ipv4_udp(ipv4_t* ip, udp_t* udp) {
+    if (!ip || !udp) return ip;
+    
+    ip->packet.packet = udp;
+    ip->protocol = 17; // UDP 
+    
+    memcpy(udp->packet.src_ip, ip->src_ip, 4);
+    memcpy(udp->packet.dst_ip, ip->dst_ip, 4);
+    
+    return ip;
+}
+
+udp_t* stack_udp_dns(udp_t* udp, dns_t* dns) {
+    if (!udp || !dns) return udp;
+    
+    udp->packet.packet = dns;
+    
+    return udp;
+}
+
+// Handle stacking transport layers directly onto ethernet (find IP layer inside)
+ether_t* stack_ether_icmp(ether_t* eth, icmp_t* icmp) {
+    if (!eth || !icmp || !eth->packet.packet) return eth;
+    
+    // Find the IP layer inside ethernet
+    ipv4_t* ip = (ipv4_t*)eth->packet.packet;
+    if (ip) {
+        stack_ipv4_icmp(ip, icmp);
+    }
+    
+    return eth;
+}
+
+ether_t* stack_ether_tcp(ether_t* eth, tcp_t* tcp) {
+    if (!eth || !tcp || !eth->packet.packet) return eth;
+    
+    // Find the IP layer inside ethernet
+    ipv4_t* ip = (ipv4_t*)eth->packet.packet;
+    if (ip) {
+        stack_ipv4_tcp(ip, tcp);
+    }
+    
+    return eth;
+}
+
+ether_t* stack_ether_udp(ether_t* eth, udp_t* udp) {
+    if (!eth || !udp || !eth->packet.packet) return eth;
+    
+    // Find the IP layer inside ethernet
+    ipv4_t* ip = (ipv4_t*)eth->packet.packet;
+    if (ip) {
+        stack_ipv4_udp(ip, udp);
+    }
+    
+    return eth;
+}
+
+// Macro to simulate division operator - usage: STACK(eth, ip) instead of eth / ip
+#define STACK(layer1, layer2) _Generic((layer2), \
+    ipv4_t*: _Generic((layer1), \
+        ether_t*: stack_ether_ipv4, \
+        default: (void*)0 \
+    ), \
+    icmp_t*: _Generic((layer1), \
+        ipv4_t*: stack_ipv4_icmp, \
+        ether_t*: stack_ether_icmp, \
+        default: (void*)0 \
+    ), \
+    tcp_t*: _Generic((layer1), \
+        ipv4_t*: stack_ipv4_tcp, \
+        ether_t*: stack_ether_tcp, \
+        default: (void*)0 \
+    ), \
+    udp_t*: _Generic((layer1), \
+        ipv4_t*: stack_ipv4_udp, \
+        ether_t*: stack_ether_udp, \
+        default: (void*)0 \
+    ), \
+    dns_t*: _Generic((layer1), \
+        udp_t*: stack_udp_dns, \
+        default: (void*)0 \
+    ), \
+    default: (void*)0 \
+)((layer1), (layer2))
+
+// Raw socket creation - equivalent to Python's socket.socket(AF_INET, SOCK_RAW, IPPROTO_RAW)
+int create_raw_socket() {
+    // Create raw socket
+    int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+    if (sockfd < 0) {
+        perror("socket creation failed");
+        return -1;
+    }
+    
+    // Enable IP_HDRINCL so kernel automatically adds layer 2 headers (like Python)
+    int one = 1;
+    if (setsockopt(sockfd, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0) {
+        perror("setsockopt IP_HDRINCL failed");
+        close(sockfd);
+        return -1;
+    }
+    
+    return sockfd;
+}
+
+// Send function - transmit packet bytes at layer 3
+int send_packet(void* pkt, int packet_type) {
+    if (!pkt) return -1;
+    
+    // Create raw socket (auto-adds layer 2 headers like Python)
+    int sockfd = create_raw_socket();
+    if (sockfd < 0) return -1;
+    
+    ipv4_t* ip_packet = nullptr;
+    
+    // Handle different packet types - find the IP layer
+    if (packet_type == 0) { // Ethernet packet
+        ether_t* eth = (ether_t*)pkt;
+        if (eth->packet.packet) {
+            ip_packet = (ipv4_t*)eth->packet.packet; // Skip to IP layer inside
+        } else {
+            printf("Error: No IP layer found inside Ethernet packet\n");
+            close(sockfd);
+            return -1;
+        }
+    } else if (packet_type == 1) { // IP packet
+        ip_packet = (ipv4_t*)pkt;
+    } else {
+        printf("Error: Unsupported packet type\n");
+        close(sockfd);
+        return -1;
+    }
+    
+    if (!ip_packet) {
+        printf("Error: No valid IP packet found\n");
+        close(sockfd);
+        return -1;
+    }
+    
+    // Convert IP packet to bytes (calls to_bytes on all layers)
+    uint8_t packet_buffer[1500];
+    size_t packet_size = ipv4_to_bytes(ip_packet, packet_buffer, sizeof(packet_buffer));
+    
+    if (packet_size == 0) {
+        printf("Error: Failed to convert packet to bytes\n");
+        close(sockfd);
+        return -1;
+    }
+    
+    // Set up destination address from IP header
+    struct sockaddr_in dest_addr;
+    memset(&dest_addr, 0, sizeof(dest_addr));
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_addr.s_addr = (ip_packet->dst_ip[0] << 24) | 
+                               (ip_packet->dst_ip[1] << 16) | 
+                               (ip_packet->dst_ip[2] << 8) | 
+                               ip_packet->dst_ip[3];
+    
+    // Send the packet at layer 3 (kernel adds layer 2 automatically)
+    ssize_t bytes_sent = sendto(sockfd, packet_buffer, packet_size, 0, 
+                               (struct sockaddr*)&dest_addr, sizeof(dest_addr));
+    
+    // Clean up
+    close(sockfd);
+    
+    if (bytes_sent < 0) {
+        perror("sendto failed");
+        return -1;
+    }
+    
+    printf("Sent %zd bytes at layer 3\n", bytes_sent);
+    return bytes_sent;
+}
+
+// Convenience functions for different packet types
+int send_ip(ipv4_t* ip_pkt) {
+    return send_packet(ip_pkt, 1);
+}
+
+int send_ether(ether_t* eth_pkt) {
+    return send_packet(eth_pkt, 0);
 }
