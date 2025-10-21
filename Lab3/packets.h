@@ -10,14 +10,14 @@
 #include <stdlib.h>
 #include <stdbool.h>
 // Following only available on linux
-#include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <arpa/inet.h>
 #include <netinet/ip.h>
 #include <unistd.h>
 #include <linux/if_packet.h>
-#include <net/if.h>
 #include <netinet/ether.h>
-#include <sys/ioctl.h>
 #include <sys/time.h>
 
 typedef struct packet_t

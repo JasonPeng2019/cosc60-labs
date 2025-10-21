@@ -1190,8 +1190,8 @@ int create_layer2_socket(const char* interface_name) {
     }
     
     struct ifreq ifr;
-    strncpy(ifr.ifr_name, interface_name, IFNAMSIZ - 1);
-    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+    strncpy(ifr.ifr_name, interface_name, IF_NAMESIZE - 1);
+    ifr.ifr_name[IF_NAMESIZE - 1] = '\0';
     
     if (ioctl(sockfd, SIOCGIFINDEX, &ifr) < 0) {
         perror("ioctl SIOCGIFINDEX failed");
@@ -1316,34 +1316,34 @@ ether_t* sr(void* pkt) {
     offset += 14;
     
     // Parse IP layer if present
-    if (eth->eth_type[0] == 0x08 && eth->eth_type[1] == 0x00 && offset < bytes_received) {
+    if (eth->eth_type[0] == 0x08 && eth->eth_type[1] == 0x00 && (ssize_t)offset < bytes_received) {
         ipv4_t* ip = parse_ipv4(packet_buffer + offset, bytes_received - offset);
         if (ip) {
             eth->packet.packet = ip;
             offset += 20; // IP header size
             
             // Parse transport layer based on protocol
-            if (ip->protocol == 1 && offset < bytes_received) {  // ICMP
+            if (ip->protocol == 1 && (ssize_t)offset < bytes_received) {  // ICMP
                 icmp_t* icmp = parse_icmp(ip, packet_buffer + offset, bytes_received - offset);
                 if (icmp) {
                     ip->packet.packet = icmp;
                     offset += 8; // ICMP header size
                 }
-            } else if (ip->protocol == 6 && offset < bytes_received) {  // TCP
+            } else if (ip->protocol == 6 && (ssize_t)offset < bytes_received) {  // TCP
                 tcp_t* tcp = parse_tcp(ip, packet_buffer + offset, bytes_received - offset);
                 if (tcp) {
                     ip->packet.packet = tcp;
                     // TCP header size varies based on data_offset field
                     offset += tcp->data_offset * 4;
                 }
-            } else if (ip->protocol == 17 && offset < bytes_received) {  // UDP
+            } else if (ip->protocol == 17 && (ssize_t)offset < bytes_received) {  // UDP
                 udp_t* udp = parse_udp(ip, packet_buffer + offset, bytes_received - offset);
                 if (udp) {
                     ip->packet.packet = udp;
                     offset += 8; // UDP header size
                     
                     // Parse application layer (e.g., DNS)
-                    if ((udp->src_port == 53 || udp->dst_port == 53) && offset < bytes_received) {
+                    if ((udp->src_port == 53 || udp->dst_port == 53) && (ssize_t)offset < bytes_received) {
                         dns_t* dns = parse_dns(packet_buffer + offset, bytes_received - offset);
                         if (dns) {
                             udp->packet.packet = dns;
@@ -1424,34 +1424,34 @@ ether_t* sniff() {
     offset += 14;
     
     // Parse IP layer if present
-    if (eth->eth_type[0] == 0x08 && eth->eth_type[1] == 0x00 && offset < bytes_received) {
+    if (eth->eth_type[0] == 0x08 && eth->eth_type[1] == 0x00 && (ssize_t)offset < bytes_received) {
         ipv4_t* ip = parse_ipv4(packet_buffer + offset, bytes_received - offset);
         if (ip) {
             eth->packet.packet = ip;
             offset += 20; // IP header size
             
             // Parse transport layer based on protocol
-            if (ip->protocol == 1 && offset < bytes_received) {  // ICMP
+            if (ip->protocol == 1 && (ssize_t)offset < bytes_received) {  // ICMP
                 icmp_t* icmp = parse_icmp(ip, packet_buffer + offset, bytes_received - offset);
                 if (icmp) {
                     ip->packet.packet = icmp;
                     offset += 8; // ICMP header size
                 }
-            } else if (ip->protocol == 6 && offset < bytes_received) {  // TCP
+            } else if (ip->protocol == 6 && (ssize_t)offset < bytes_received) {  // TCP
                 tcp_t* tcp = parse_tcp(ip, packet_buffer + offset, bytes_received - offset);
                 if (tcp) {
                     ip->packet.packet = tcp;
                     // TCP header size varies based on data_offset field
                     offset += tcp->data_offset * 4;
                 }
-            } else if (ip->protocol == 17 && offset < bytes_received) {  // UDP
+            } else if (ip->protocol == 17 && (ssize_t)offset < bytes_received) {  // UDP
                 udp_t* udp = parse_udp(ip, packet_buffer + offset, bytes_received - offset);
                 if (udp) {
                     ip->packet.packet = udp;
                     offset += 8; // UDP header size
                     
                     // Parse application layer (e.g., DNS)
-                    if ((udp->src_port == 53 || udp->dst_port == 53) && offset < bytes_received) {
+                    if ((udp->src_port == 53 || udp->dst_port == 53) && (ssize_t)offset < bytes_received) {
                         dns_t* dns = parse_dns(packet_buffer + offset, bytes_received - offset);
                         if (dns) {
                             udp->packet.packet = dns;

@@ -7,8 +7,9 @@ project(NetworkLab3
     LANGUAGES C)
 
 # Set C standard
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS ON)
 
 # Compiler flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
@@ -66,38 +67,30 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Test executable
-add_executable(packets_test)
-target_sources(packets_test PRIVATE
-    $<TARGET_OBJECTS:test_main_obj>
-)
+add_executable(packets_test main.c)
+target_sources(packets_test PRIVATE packets.c)
 
-# Create test main source as object library
-add_library(test_main_obj OBJECT)
-target_sources(test_main_obj PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR}/test_main.c
-)
-
-# Generate test main file
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/test_main.c
-"#include \"packets.h\"
-#include <stdio.h>
-
-int main() {
-    printf(\"Packet library compiled successfully with CMake!\\n\");
-    
-    uint8_t src_ip[4] = {192, 168, 1, 1};
-    uint8_t dst_ip[4] = {192, 168, 1, 2};
-    
-    ipv4_t* ip = create_ipv4(src_ip, dst_ip, 1, 20, 64, 0, 0, 0, 0);
-    if (ip) {
-        printf(\"IPv4 packet created successfully!\\n\");
-        ipv4_show(ip);
-        free(ip);
-    }
-    
-    return 0;
-}
-")
+# Generate test main file (commented out - using custom main.c instead)
+# file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/test_main.c
+# "#include \"packets.h\"
+# #include <stdio.h>
+# 
+# int main() {
+#     printf(\"Packet library compiled successfully with CMake!\\n\");
+#     
+#     uint8_t src_ip[4] = {192, 168, 1, 1};
+#     uint8_t dst_ip[4] = {192, 168, 1, 2};
+#     
+#     ipv4_t* ip = create_ipv4(src_ip, dst_ip, 1, 20, 64, 0, 0, 0, 0);
+#     if (ip) {
+#         printf(\"IPv4 packet created successfully!\\n\");
+#         ipv4_show(ip);
+#         free(ip);
+#     }
+#     
+#     return 0;
+# }
+# ")
 
 target_link_libraries(packets_test PRIVATE packets_static)
 target_include_directories(packets_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

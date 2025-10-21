@@ -3,7 +3,7 @@
 
 # Compiler and flags
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c11 -O2 -g
+CFLAGS = -Wall -Wextra -std=gnu99 -O2 -g
 LDFLAGS = 
 
 # Pure C compilation
@@ -14,7 +14,7 @@ FLAGS = $(CFLAGS)
 TARGET = packets_test
 
 # Source files
-SOURCES = packets.c
+SOURCES = packets.c main.c
 HEADERS = packets.h
 
 # Object files
