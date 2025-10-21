@@ -1061,8 +1061,8 @@ ether_t* stack_ether_udp(ether_t* eth, udp_t* udp) {
     default: (void*)0 \
 )((layer1), (layer2))
 
-// Raw socket creation - equivalent to Python's socket.socket(AF_INET, SOCK_RAW, IPPROTO_RAW)
-int create_raw_socket() {
+// Layer 3 raw socket creation - equivalent to Python's socket.socket(AF_INET, SOCK_RAW, IPPROTO_RAW)
+int create_layer3_socket() {
     // Create raw socket
     int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
     if (sockfd < 0) {
@@ -1086,22 +1086,21 @@ int send_packet(void* pkt, int packet_type) {
     if (!pkt) return -1;
     
     // Create raw socket (auto-adds layer 2 headers like Python)
-    int sockfd = create_raw_socket();
+    int sockfd = create_layer3_socket();
     if (sockfd < 0) return -1;
     
     ipv4_t* ip_packet = nullptr;
     
-    // Handle different packet types - find the IP layer
-    if (packet_type == 0) { // Ethernet packet
+    if (packet_type == 0) { 
         ether_t* eth = (ether_t*)pkt;
         if (eth->packet.packet) {
-            ip_packet = (ipv4_t*)eth->packet.packet; // Skip to IP layer inside
+            ip_packet = (ipv4_t*)eth->packet.packet; 
         } else {
             printf("Error: No IP layer found inside Ethernet packet\n");
             close(sockfd);
             return -1;
         }
-    } else if (packet_type == 1) { // IP packet
+    } else if (packet_type == 1) { 
         ip_packet = (ipv4_t*)pkt;
     } else {
         printf("Error: Unsupported packet type\n");
@@ -1115,7 +1114,6 @@ int send_packet(void* pkt, int packet_type) {
         return -1;
     }
     
-    // Convert IP packet to bytes (calls to_bytes on all layers)
     uint8_t packet_buffer[1500];
     size_t packet_size = ipv4_to_bytes(ip_packet, packet_buffer, sizeof(packet_buffer));
     
@@ -1125,7 +1123,6 @@ int send_packet(void* pkt, int packet_type) {
         return -1;
     }
     
-    // Set up destination address from IP header
     struct sockaddr_in dest_addr;
     memset(&dest_addr, 0, sizeof(dest_addr));
     dest_addr.sin_family = AF_INET;
@@ -1134,11 +1131,9 @@ int send_packet(void* pkt, int packet_type) {
                                (ip_packet->dst_ip[2] << 8) | 
                                ip_packet->dst_ip[3];
     
-    // Send the packet at layer 3 (kernel adds layer 2 automatically)
     ssize_t bytes_sent = sendto(sockfd, packet_buffer, packet_size, 0, 
                                (struct sockaddr*)&dest_addr, sizeof(dest_addr));
     
-    // Clean up
     close(sockfd);
     
     if (bytes_sent < 0) {
@@ -1150,11 +1145,75 @@ int send_packet(void* pkt, int packet_type) {
     return bytes_sent;
 }
 
-// Convenience functions for different packet types
-int send_ip(ipv4_t* ip_pkt) {
-    return send_packet(ip_pkt, 1);
+// Layer 3 send function - wrapper for send_packet
+int send(void* pkt) {
+    ipv4_t* ip_test = (ipv4_t*)pkt;
+    if (ip_test && ip_test->version == 4) {
+        return send_packet(pkt, 1); // IP packet
+    }
+    
+    return send_packet(pkt, 0); // Ethernet packet
 }
 
-int send_ether(ether_t* eth_pkt) {
-    return send_packet(eth_pkt, 0);
+// Layer 2 raw socket creation - equivalent to Python's socket.socket(AF_PACKET, SOCK_RAW)
+int create_layer2_socket(const char* interface_name) {
+    // Create layer 2 raw socket
+    int sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+    if (sockfd < 0) {
+        perror("layer 2 socket creation failed");
+        return -1;
+    }
+    
+    struct ifreq ifr;
+    strncpy(ifr.ifr_name, interface_name, IFNAMSIZ - 1);
+    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+    
+    if (ioctl(sockfd, SIOCGIFINDEX, &ifr) < 0) {
+        perror("ioctl SIOCGIFINDEX failed");
+        close(sockfd);
+        return -1;
+    }
+    
+    struct sockaddr_ll addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sll_family = AF_PACKET;
+    addr.sll_ifindex = ifr.ifr_ifindex;
+    addr.sll_protocol = htons(ETH_P_ALL);
+    
+    if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        perror("bind to interface failed");
+        close(sockfd);
+        return -1;
+    }
+    
+    return sockfd;
+}
+
+// Send ethernet frame at layer 2 (no automatic headers added)
+int sendp(ether_t* eth_pkt, const char* interface_name) {
+    if (!eth_pkt) return -1;
+    
+    int sockfd = create_layer2_socket(interface_name);
+    if (sockfd < 0) return -1;
+    
+    uint8_t packet_buffer[1500];
+    size_t packet_size = ether_to_bytes(eth_pkt, packet_buffer, sizeof(packet_buffer), nullptr, 0);
+    
+    if (packet_size == 0) {
+        printf("Error: Failed to convert ethernet packet to bytes\n");
+        close(sockfd);
+        return -1;
+    }
+    
+    ssize_t bytes_sent = send(sockfd, packet_buffer, packet_size, 0);
+    
+    close(sockfd);
+    
+    if (bytes_sent < 0) {
+        perror("send layer 2 failed");
+        return -1;
+    }
+    
+    printf("Sent %zd bytes at layer 2\n", bytes_sent);
+    return bytes_sent;
 }

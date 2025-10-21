@@ -13,6 +13,9 @@
 #include <sys/socket.h>
 #include <netinet/ip.h>
 #include <unistd.h>
+#include <linux/if_packet.h>
+#include <net/if.h>
+#include <netinet/ether.h>
 
 typedef struct packet_t
 {
@@ -200,9 +203,10 @@ ether_t* stack_ether_udp(ether_t* eth, udp_t* udp);
 )((layer1), (layer2))
 
 // Raw socket functions
-int create_raw_socket();
+int create_layer3_socket();
+int create_layer2_socket(const char* interface_name);
 int send_packet(void* pkt, int packet_type);
-int send_ip(ipv4_t* ip_pkt);
-int send_ether(ether_t* eth_pkt);
+int send(void* pkt);
+int sendp(ether_t* eth_pkt, const char* interface_name);
 
 #endif // PACKETS_H
