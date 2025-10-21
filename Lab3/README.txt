@@ -14,3 +14,10 @@ sudo apt-get update && sudo apt-get install build-essential
   make all          # Build everything
   make test         # Build and run test
   make clean        # Clean up
+
+  Compile and run:
+  gcc -std=c11 -Wall packets.c my_program.c -o my_program
+  ./my_program
+
+  For network operations (sending/receiving), run as root:
+  sudo ./my_program

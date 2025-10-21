@@ -3,7 +3,7 @@
 
 //coded with help from Claude Code Inline Autocomplete for CS60
 //-Jason P
-
+#include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -17,6 +17,8 @@
 #include <linux/if_packet.h>
 #include <net/if.h>
 #include <netinet/ether.h>
+#include <sys/ioctl.h>
+#include <sys/time.h>
 
 typedef struct packet_t
 {
@@ -208,10 +210,8 @@ int create_layer3_socket();
 int create_layer2_socket(const char* interface_name);
 int create_layer2_recv_socket();
 int send_packet(void* pkt, int packet_type);
-int send(void* pkt);
+int send_f(void* pkt);
 int sendp(ether_t* eth_pkt, const char* interface_name);
-ether_t* recv_layer2(int sockfd);
-ether_t* recv();
 ether_t* sr(void* pkt);
 ether_t* sniff();
 

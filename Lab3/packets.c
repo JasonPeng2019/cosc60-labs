@@ -363,7 +363,6 @@ ipv4_t* parse_ipv4(const uint8_t* raw_bytes, size_t len) {
     
     uint8_t version_ihl = raw_bytes[0];
     uint8_t version = (version_ihl >> 4) & 0x0F;
-    uint8_t ihl = version_ihl & 0x0F;
     
     if (version != 4) return NULL; 
     
@@ -445,7 +444,6 @@ udp_t* parse_udp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
     
     uint16_t src_port = (raw_bytes[0] << 8) | raw_bytes[1];
     uint16_t dst_port = (raw_bytes[2] << 8) | raw_bytes[3];
-    uint16_t length = (raw_bytes[4] << 8) | raw_bytes[5];
     
     const void* data = NULL;
     size_t data_len = 0;
@@ -458,7 +456,7 @@ udp_t* parse_udp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
     
     // Check for higher layers (e.g., DNS on port 53)
     if ((src_port == 53 || dst_port == 53) && data && data_len > 0) {
-        dns_t* dns_payload = parse_dns((const uint8_t*)data, data_len);
+        parse_dns((const uint8_t*)data, data_len);
         // Note: Need to add a way to store the DNS payload in UDP
         // For now, just parsing but not storing
     }
@@ -674,7 +672,24 @@ size_t ipv4_to_bytes(const ipv4_t* ip, uint8_t* buffer, size_t buffer_size) {
     
     size_t total_size = 20;
     
-    if (ip->packet.data && ip->packet.data_len > 0 && buffer_size >= total_size + ip->packet.data_len) {
+    // Check for stacked transport layer protocols first
+    if (ip->packet.packet) {
+        // Determine protocol type and call appropriate *_to_bytes function
+        if (ip->protocol == 6) {        // TCP
+            tcp_t* tcp = (tcp_t*)ip->packet.packet;
+            size_t tcp_size = tcp_to_bytes(tcp, buffer + total_size, buffer_size - total_size);
+            total_size += tcp_size;
+        } else if (ip->protocol == 17) { // UDP  
+            udp_t* udp = (udp_t*)ip->packet.packet;
+            size_t udp_size = udp_to_bytes(udp, buffer + total_size, buffer_size - total_size);
+            total_size += udp_size;
+        } else if (ip->protocol == 1) {  // ICMP
+            icmp_t* icmp = (icmp_t*)ip->packet.packet;
+            size_t icmp_size = icmp_to_bytes(icmp, buffer + total_size, buffer_size - total_size);
+            total_size += icmp_size;
+        }
+    } else if (ip->packet.data && ip->packet.data_len > 0 && buffer_size >= total_size + ip->packet.data_len) {
+        // Fallback to raw data if no stacked protocols
         memcpy(buffer + total_size, ip->packet.data, ip->packet.data_len);
         total_size += ip->packet.data_len;
     }
@@ -782,7 +797,17 @@ size_t udp_to_bytes(const udp_t* udp, uint8_t* buffer, size_t buffer_size) {
     
     size_t total_size = 8;
     
-    if (udp->packet.data && udp->packet.data_len > 0 && buffer_size >= total_size + udp->packet.data_len) {
+    // Check for stacked application layer protocols first (e.g., DNS)
+    if (udp->packet.packet) {
+        // Check for DNS on port 53
+        if (udp->src_port == 53 || udp->dst_port == 53) {
+            dns_t* dns = (dns_t*)udp->packet.packet;
+            size_t dns_size = dns_to_bytes(dns, buffer + total_size, buffer_size - total_size);
+            total_size += dns_size;
+        }
+        // Add other application protocols here as needed
+    } else if (udp->packet.data && udp->packet.data_len > 0 && buffer_size >= total_size + udp->packet.data_len) {
+        // Fallback to raw data if no stacked protocols
         memcpy(buffer + total_size, udp->packet.data, udp->packet.data_len);
         total_size += udp->packet.data_len;
     }
@@ -1146,7 +1171,7 @@ int send_packet(void* pkt, int packet_type) {
 }
 
 // Layer 3 send function - wrapper for send_packet
-int send(void* pkt) {
+int send_f(void* pkt) {
     ipv4_t* ip_test = (ipv4_t*)pkt;
     if (ip_test && ip_test->version == 4) {
         return send_packet(pkt, 1); // IP packet
@@ -1241,7 +1266,25 @@ int create_layer2_recv_socket() {
 }
 
 // Receive ethernet frame at layer 2 from any interface
-ether_t* recv_layer2(int sockfd) {
+
+// Send packet at layer 3, receive reply at layer 2 and recursively parse to last layer
+ether_t* sr(void* pkt) {
+    if (pkt == NULL) {
+        printf("Error: null packet provided to sr()\n");
+        return NULL;
+    }
+    
+    // Send using layer 3 
+    int send_result = send_f(pkt);
+    if (send_result < 0) {
+        printf("Error: failed to send packet in sr()\n");
+        return NULL;
+    }
+    
+    printf("Sent %d bytes at layer 3, waiting for reply...\n", send_result);
+    
+    // Receive raw bytes at layer 2 
+    int sockfd = create_layer2_recv_socket();
     if (sockfd < 0) return NULL;
     
     uint8_t packet_buffer[1500];
@@ -1250,9 +1293,10 @@ ether_t* recv_layer2(int sockfd) {
     
     ssize_t bytes_received = recvfrom(sockfd, packet_buffer, sizeof(packet_buffer), 0,
                                      (struct sockaddr*)&addr, &addr_len);
+    close(sockfd);
     
     if (bytes_received < 0) {
-        perror("recvfrom failed");
+        printf("Timeout: No reply received within 5 seconds\n");
         return NULL;
     }
     
@@ -1261,67 +1305,192 @@ ether_t* recv_layer2(int sockfd) {
         return NULL;
     }
     
-    printf("Received %zd bytes from interface index %d\n", bytes_received, addr.sll_ifindex);
+    printf("Received %zd bytes, parsing layers...\n", bytes_received);
     
-    ether_t* eth_pkt = parse_ether(packet_buffer, bytes_received);
+    // Start recursive parsing from Layer 2
+    size_t offset = 0;
     
-    if (eth_pkt != NULL) {
-        ether_show(eth_pkt);
+    // Parse Ethernet layer
+    ether_t* eth = parse_ether(packet_buffer + offset, bytes_received - offset);
+    if (!eth) return NULL;
+    offset += 14;
+    
+    // Parse IP layer if present
+    if (eth->eth_type[0] == 0x08 && eth->eth_type[1] == 0x00 && offset < bytes_received) {
+        ipv4_t* ip = parse_ipv4(packet_buffer + offset, bytes_received - offset);
+        if (ip) {
+            eth->packet.packet = ip;
+            offset += 20; // IP header size
+            
+            // Parse transport layer based on protocol
+            if (ip->protocol == 1 && offset < bytes_received) {  // ICMP
+                icmp_t* icmp = parse_icmp(ip, packet_buffer + offset, bytes_received - offset);
+                if (icmp) {
+                    ip->packet.packet = icmp;
+                    offset += 8; // ICMP header size
+                }
+            } else if (ip->protocol == 6 && offset < bytes_received) {  // TCP
+                tcp_t* tcp = parse_tcp(ip, packet_buffer + offset, bytes_received - offset);
+                if (tcp) {
+                    ip->packet.packet = tcp;
+                    // TCP header size varies based on data_offset field
+                    offset += tcp->data_offset * 4;
+                }
+            } else if (ip->protocol == 17 && offset < bytes_received) {  // UDP
+                udp_t* udp = parse_udp(ip, packet_buffer + offset, bytes_received - offset);
+                if (udp) {
+                    ip->packet.packet = udp;
+                    offset += 8; // UDP header size
+                    
+                    // Parse application layer (e.g., DNS)
+                    if ((udp->src_port == 53 || udp->dst_port == 53) && offset < bytes_received) {
+                        dns_t* dns = parse_dns(packet_buffer + offset, bytes_received - offset);
+                        if (dns) {
+                            udp->packet.packet = dns;
+                        }
+                    }
+                }
+            }
+        }
     }
     
-    return eth_pkt;
+    // Display the parsed packet
+    if (eth) {
+        printf("\n=== Received Packet ===\n");
+        ether_show(eth);
+        
+        // Show IP layer if present
+        if (eth->packet.packet) {
+            ipv4_t* ip = (ipv4_t*)eth->packet.packet;
+            ipv4_show(ip);
+            
+            // Show transport layer if present
+            if (ip->packet.packet) {
+                if (ip->protocol == 1) {  // ICMP
+                    icmp_show((icmp_t*)ip->packet.packet);
+                } else if (ip->protocol == 6) {  // TCP
+                    tcp_show((tcp_t*)ip->packet.packet);
+                } else if (ip->protocol == 17) {  // UDP
+                    udp_t* udp = (udp_t*)ip->packet.packet;
+                    udp_show(udp);
+                    
+                    // Show DNS if present
+                    if (udp->packet.packet) {
+                        dns_show((dns_t*)udp->packet.packet);
+                    }
+                }
+            }
+        }
+        printf("======================\n\n");
+    }
+    
+    return eth;
 }
 
-// Convenience function to create socket and receive in one call
-ether_t* recv() {
+// Sniff - receive packet at layer 2 and recursively reconstruct to last layer
+ether_t* sniff() {
+    printf("Sniffing for packet at layer 2...\n");
+    
+    // Receive raw bytes at layer 2 
     int sockfd = create_layer2_recv_socket();
     if (sockfd < 0) return NULL;
     
-    ether_t* pkt = recv_layer2(sockfd);
+    uint8_t packet_buffer[1500];
+    struct sockaddr_ll addr;
+    socklen_t addr_len = sizeof(addr);
     
+    ssize_t bytes_received = recvfrom(sockfd, packet_buffer, sizeof(packet_buffer), 0,
+                                     (struct sockaddr*)&addr, &addr_len);
     close(sockfd);
-    return pkt;
-}
-
-// Send and receive - send packet using layer 3, receive reply using layer 2
-ether_t* sr(void* pkt) {
-    if (pkt == NULL) {
-        printf("Error: null packet provided to sr()\n");
+    
+    if (bytes_received < 0) {
+        printf("Timeout: No reply received within 5 seconds\n");
         return NULL;
     }
     
-    // Send using layer 3 
-    int send_result = send(pkt);
-    if (send_result < 0) {
-        printf("Error: failed to send packet in sr()\n");
+    if (bytes_received < 14) {
+        printf("Received packet too small for ethernet header (%zd bytes)\n", bytes_received);
         return NULL;
     }
     
-    printf("Sent %d bytes, waiting for reply...\n", send_result);
+    printf("Received %zd bytes, parsing layers...\n", bytes_received);
     
-    // Receive reply in layer 2 
-    ether_t* reply = recv();
+    // Start recursive parsing from Layer 2
+    size_t offset = 0;
     
-    return reply;
-}
-
-// Sniff - receive one packet at layer 2 and build it back to layer 3
-ether_t* sniff() {
-    printf("Sniffing for one packet...\n");
+    // Parse Ethernet layer
+    ether_t* eth = parse_ether(packet_buffer + offset, bytes_received - offset);
+    if (!eth) return NULL;
+    offset += 14;
     
-    // Receive one packet at layer 2 - parse_ether() automatically builds to layer 3 if IPv4
-    ether_t* eth_pkt = recv();
-    
-    if (eth_pkt == NULL) {
-        printf("No packet received during sniff\n");
-        return NULL;
+    // Parse IP layer if present
+    if (eth->eth_type[0] == 0x08 && eth->eth_type[1] == 0x00 && offset < bytes_received) {
+        ipv4_t* ip = parse_ipv4(packet_buffer + offset, bytes_received - offset);
+        if (ip) {
+            eth->packet.packet = ip;
+            offset += 20; // IP header size
+            
+            // Parse transport layer based on protocol
+            if (ip->protocol == 1 && offset < bytes_received) {  // ICMP
+                icmp_t* icmp = parse_icmp(ip, packet_buffer + offset, bytes_received - offset);
+                if (icmp) {
+                    ip->packet.packet = icmp;
+                    offset += 8; // ICMP header size
+                }
+            } else if (ip->protocol == 6 && offset < bytes_received) {  // TCP
+                tcp_t* tcp = parse_tcp(ip, packet_buffer + offset, bytes_received - offset);
+                if (tcp) {
+                    ip->packet.packet = tcp;
+                    // TCP header size varies based on data_offset field
+                    offset += tcp->data_offset * 4;
+                }
+            } else if (ip->protocol == 17 && offset < bytes_received) {  // UDP
+                udp_t* udp = parse_udp(ip, packet_buffer + offset, bytes_received - offset);
+                if (udp) {
+                    ip->packet.packet = udp;
+                    offset += 8; // UDP header size
+                    
+                    // Parse application layer (e.g., DNS)
+                    if ((udp->src_port == 53 || udp->dst_port == 53) && offset < bytes_received) {
+                        dns_t* dns = parse_dns(packet_buffer + offset, bytes_received - offset);
+                        if (dns) {
+                            udp->packet.packet = dns;
+                        }
+                    }
+                }
+            }
+        }
     }
     
-    if (eth_pkt->packet.packet != NULL) {
-        printf("Packet successfully built from Layer 2 to Layer 3\n");
-    } else {
-        printf("Packet built at Layer 2 (no Layer 3 payload detected)\n");
+    // Display the parsed packet
+    if (eth) {
+        printf("\n=== Received Packet ===\n");
+        ether_show(eth);
+        
+        // Show IP layer if present
+        if (eth->packet.packet) {
+            ipv4_t* ip = (ipv4_t*)eth->packet.packet;
+            ipv4_show(ip);
+            
+            // Show transport layer if present
+            if (ip->packet.packet) {
+                if (ip->protocol == 1) {  // ICMP
+                    icmp_show((icmp_t*)ip->packet.packet);
+                } else if (ip->protocol == 6) {  // TCP
+                    tcp_show((tcp_t*)ip->packet.packet);
+                } else if (ip->protocol == 17) {  // UDP
+                    udp_t* udp = (udp_t*)ip->packet.packet;
+                    udp_show(udp);
+                    
+                    // Show DNS if present
+                    if (udp->packet.packet) {
+                        dns_show((dns_t*)udp->packet.packet);
+                    }
+                }
+            }
+        }
+        printf("======================\n\n");
     }
     
-    return eth_pkt;
+    return eth;
 }
