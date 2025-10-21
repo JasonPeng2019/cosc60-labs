@@ -205,8 +205,13 @@ ether_t* stack_ether_udp(ether_t* eth, udp_t* udp);
 // Raw socket functions
 int create_layer3_socket();
 int create_layer2_socket(const char* interface_name);
+int create_layer2_recv_socket();
 int send_packet(void* pkt, int packet_type);
 int send(void* pkt);
 int sendp(ether_t* eth_pkt, const char* interface_name);
+ether_t* recv_layer2(int sockfd);
+ether_t* recv();
+ether_t* sr(void* pkt);
+ether_t* sniff();
 
 #endif // PACKETS_H

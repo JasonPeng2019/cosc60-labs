@@ -1217,3 +1217,111 @@ int sendp(ether_t* eth_pkt, const char* interface_name) {
     printf("Sent %zd bytes at layer 2\n", bytes_sent);
     return bytes_sent;
 }
+
+// Create layer 2 receive socket - equivalent to Python's socket.socket(AF_PACKET, SOCK_RAW, htons(0x0003))
+int create_layer2_recv_socket() {
+    int sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL)); // 0x0003 = ETH_P_ALL
+    if (sockfd < 0) {
+        perror("layer 2 receive socket creation failed");
+        return -1;
+    }
+    
+    // timeout = 5s
+    struct timeval timeout;
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 0;
+    
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        perror("setsockopt SO_RCVTIMEO failed");
+        close(sockfd);
+        return -1;
+    }
+    
+    return sockfd;
+}
+
+// Receive ethernet frame at layer 2 from any interface
+ether_t* recv_layer2(int sockfd) {
+    if (sockfd < 0) return nullptr;
+    
+    uint8_t packet_buffer[1500];
+    struct sockaddr_ll addr;
+    socklen_t addr_len = sizeof(addr);
+    
+    ssize_t bytes_received = recvfrom(sockfd, packet_buffer, sizeof(packet_buffer), 0,
+                                     (struct sockaddr*)&addr, &addr_len);
+    
+    if (bytes_received < 0) {
+        perror("recvfrom failed");
+        return nullptr;
+    }
+    
+    if (bytes_received < 14) {
+        printf("Received packet too small for ethernet header (%zd bytes)\n", bytes_received);
+        return nullptr;
+    }
+    
+    printf("Received %zd bytes from interface index %d\n", bytes_received, addr.sll_ifindex);
+    
+    ether_t* eth_pkt = parse_ether(packet_buffer, bytes_received);
+    
+    if (eth_pkt != nullptr) {
+        ether_show(eth_pkt);
+    }
+    
+    return eth_pkt;
+}
+
+// Convenience function to create socket and receive in one call
+ether_t* recv() {
+    int sockfd = create_layer2_recv_socket();
+    if (sockfd < 0) return nullptr;
+    
+    ether_t* pkt = recv_layer2(sockfd);
+    
+    close(sockfd);
+    return pkt;
+}
+
+// Send and receive - send packet using layer 3, receive reply using layer 2
+ether_t* sr(void* pkt) {
+    if (pkt == nullptr) {
+        printf("Error: null packet provided to sr()\n");
+        return nullptr;
+    }
+    
+    // Send using layer 3 
+    int send_result = send(pkt);
+    if (send_result < 0) {
+        printf("Error: failed to send packet in sr()\n");
+        return nullptr;
+    }
+    
+    printf("Sent %d bytes, waiting for reply...\n", send_result);
+    
+    // Receive reply in layer 2 
+    ether_t* reply = recv();
+    
+    return reply;
+}
+
+// Sniff - receive one packet at layer 2 and build it back to layer 3
+ether_t* sniff() {
+    printf("Sniffing for one packet...\n");
+    
+    // Receive one packet at layer 2 - parse_ether() automatically builds to layer 3 if IPv4
+    ether_t* eth_pkt = recv();
+    
+    if (eth_pkt == nullptr) {
+        printf("No packet received during sniff\n");
+        return nullptr;
+    }
+    
+    if (eth_pkt->packet.packet != nullptr) {
+        printf("Packet successfully built from Layer 2 to Layer 3\n");
+    } else {
+        printf("Packet built at Layer 2 (no Layer 3 payload detected)\n");
+    }
+    
+    return eth_pkt;
+}
