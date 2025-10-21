@@ -4,3 +4,13 @@ These are part of the GNU C Library (glibc) and are available on all mainstream 
 On Ubuntu/Debian-based systems, install them with:
 
 sudo apt-get update && sudo apt-get install build-essential
+
+ # Install build tools
+  sudo apt-get update
+  sudo apt-get install build-essential cmake pkg-config
+
+#Make
+  make deps
+  make all          # Build everything
+  make test         # Build and run test
+  make clean        # Clean up

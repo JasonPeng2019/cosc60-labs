@@ -1,0 +1,35 @@
+# NetworkLab3Config.cmake.in - CMake configuration template
+# This file is processed by CMake to create NetworkLab3Config.cmake
+
+@PACKAGE_INIT@
+
+# Set version information
+set(NetworkLab3_VERSION "@PROJECT_VERSION@")
+set(NetworkLab3_VERSION_MAJOR "@PROJECT_VERSION_MAJOR@")
+set(NetworkLab3_VERSION_MINOR "@PROJECT_VERSION_MINOR@")
+set(NetworkLab3_VERSION_PATCH "@PROJECT_VERSION_PATCH@")
+
+# Include generated targets
+include("${CMAKE_CURRENT_LIST_DIR}/NetworkLab3Targets.cmake")
+
+# Check required components
+set(_NetworkLab3_supported_components shared static)
+
+foreach(_comp ${NetworkLab3_FIND_COMPONENTS})
+    if (NOT _comp IN_LIST _NetworkLab3_supported_components)
+        set(NetworkLab3_FOUND False)
+        set(NetworkLab3_NOT_FOUND_MESSAGE "Unsupported component: ${_comp}")
+    endif()
+endforeach()
+
+# Set variables for backward compatibility
+set(NetworkLab3_LIBRARIES NetworkLab3::packets_shared)
+set(NetworkLab3_INCLUDE_DIRS "@CMAKE_INSTALL_FULL_INCLUDEDIR@")
+
+# Provide legacy target names
+if(NOT TARGET NetworkLab3::packets)
+    add_library(NetworkLab3::packets ALIAS NetworkLab3::packets_shared)
+endif()
+
+# Check that all required targets exist
+check_required_components(NetworkLab3)

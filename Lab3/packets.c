@@ -11,11 +11,11 @@
 // Ethernet constructor - no packet_t field, no IP info
 ether_t* create_ether(const uint8_t dst_mac[6], const uint8_t src_mac[6], uint16_t eth_type) {
     ether_t* eth = (ether_t*)malloc(sizeof(ether_t));
-    if (!eth) return nullptr;
+    if (!eth) return NULL;
     
     // Initialize packet_t field
-    eth->packet.packet = nullptr;
-    eth->packet.data = nullptr;
+    eth->packet.packet = NULL;
+    eth->packet.data = NULL;
     eth->packet.data_len = 0;
     memset(eth->packet.src_ip, 0, 4);
     memset(eth->packet.dst_ip, 0, 4);
@@ -33,11 +33,11 @@ ipv4_t* create_ipv4(const uint8_t src_ip[4], const uint8_t dst_ip[4], uint8_t pr
                     uint16_t total_length, uint8_t ttl, uint16_t identification,
                     uint8_t tos, uint8_t flags, uint16_t fragment_offset) {
     ipv4_t* ip = (ipv4_t*)malloc(sizeof(ipv4_t));
-    if (!ip) return nullptr;
+    if (!ip) return NULL;
     
     // Initialize packet_t field
-    ip->packet.packet = nullptr;
-    ip->packet.data = nullptr;
+    ip->packet.packet = NULL;
+    ip->packet.data = NULL;
     ip->packet.data_len = 0;
     memcpy(ip->packet.src_ip, src_ip, 4);
     memcpy(ip->packet.dst_ip, dst_ip, 4);
@@ -66,7 +66,7 @@ ipv4_t* create_ipv4(const uint8_t src_ip[4], const uint8_t dst_ip[4], uint8_t pr
 icmp_t* create_icmp(ipv4_t* ip_packet, uint8_t type, uint8_t code, uint16_t id, uint16_t seq, 
                     const void* data, size_t data_len) {
     icmp_t* icmp = (icmp_t*)malloc(sizeof(icmp_t));
-    if (!icmp) return nullptr;
+    if (!icmp) return NULL;
     
     // Copy packet_t from IP layer and inject data
     icmp->packet = ip_packet->packet;
@@ -91,7 +91,7 @@ tcp_t* create_tcp(ipv4_t* ip_packet, uint16_t src_port, uint16_t dst_port, uint3
                   uint16_t flags, uint16_t window, uint16_t urgent_ptr,
                   const void* data, size_t data_len) {
     tcp_t* tcp = (tcp_t*)malloc(sizeof(tcp_t));
-    if (!tcp) return nullptr;
+    if (!tcp) return NULL;
     
     // Copy packet_t from IP layer and inject data
     tcp->packet = ip_packet->packet;
@@ -120,7 +120,7 @@ tcp_t* create_tcp(ipv4_t* ip_packet, uint16_t src_port, uint16_t dst_port, uint3
 udp_t* create_udp(ipv4_t* ip_packet, uint16_t src_port, uint16_t dst_port, 
                   const void* data, size_t data_len) {
     udp_t* udp = (udp_t*)malloc(sizeof(udp_t));
-    if (!udp) return nullptr;
+    if (!udp) return NULL;
     
     // Copy packet_t from IP layer and inject data
     udp->packet = ip_packet->packet;
@@ -142,14 +142,14 @@ udp_t* create_udp(ipv4_t* ip_packet, uint16_t src_port, uint16_t dst_port,
 // DNS question constructor
 dns_question_t* create_dns_question(const char* qname, uint16_t qtype, uint16_t qclass) {
     dns_question_t* question = (dns_question_t*)malloc(sizeof(dns_question_t));
-    if (!question) return nullptr;
+    if (!question) return NULL;
     
     // Allocate and copy qname
     size_t name_len = strlen(qname) + 1;
     question->qname = (char*)malloc(name_len);
     if (!question->qname) {
         free(question);
-        return nullptr;
+        return NULL;
     }
     strcpy(question->qname, qname);
     
@@ -163,14 +163,14 @@ dns_question_t* create_dns_question(const char* qname, uint16_t qtype, uint16_t 
 dns_ans_t* create_dns_answer(const char* name, uint16_t type, uint16_t rr_class, uint32_t ttl,
                              const uint8_t* rdata, uint16_t rdlength) {
     dns_ans_t* answer = (dns_ans_t*)malloc(sizeof(dns_ans_t));
-    if (!answer) return nullptr;
+    if (!answer) return NULL;
     
     // Allocate and copy name
     size_t name_len = strlen(name) + 1;
     answer->name = (char*)malloc(name_len);
     if (!answer->name) {
         free(answer);
-        return nullptr;
+        return NULL;
     }
     strcpy(answer->name, name);
     
@@ -185,11 +185,11 @@ dns_ans_t* create_dns_answer(const char* name, uint16_t type, uint16_t rr_class,
         if (!answer->rdata) {
             free(answer->name);
             free(answer);
-            return nullptr;
+            return NULL;
         }
         memcpy(answer->rdata, rdata, rdlength);
     } else {
-        answer->rdata = nullptr;
+        answer->rdata = NULL;
     }
     
     return answer;
@@ -199,10 +199,10 @@ dns_ans_t* create_dns_answer(const char* name, uint16_t type, uint16_t rr_class,
 dns_t* create_dns(uint16_t id, uint16_t flags, dns_question_t* questions, uint16_t qd_count,
                   dns_ans_t* answers, uint16_t an_count, uint16_t ns_count, uint16_t ar_count) {
     dns_t* dns = (dns_t*)malloc(sizeof(dns_t));
-    if (!dns) return nullptr;
+    if (!dns) return NULL;
     
-    dns->packet.packet = nullptr;
-    dns->packet.data = nullptr;
+    dns->packet.packet = NULL;
+    dns->packet.data = NULL;
     dns->packet.data_len = 0;
     memset(dns->packet.src_ip, 0, 4);
     memset(dns->packet.dst_ip, 0, 4);
@@ -335,7 +335,7 @@ uint16_t calculate_udp_checksum(const udp_t* udp_header) {
 }
 
 ether_t* parse_ether(const uint8_t* raw_bytes, size_t len) {
-    if (len < 14) return nullptr; // min ethernet header
+    if (len < 14) return NULL; // min ethernet header
     
     uint8_t dst_mac[6];
     memcpy(dst_mac, raw_bytes, 6);
@@ -359,13 +359,13 @@ ether_t* parse_ether(const uint8_t* raw_bytes, size_t len) {
 }
 
 ipv4_t* parse_ipv4(const uint8_t* raw_bytes, size_t len) {
-    if (len < 20) return nullptr; // min IPv4 header
+    if (len < 20) return NULL; // min IPv4 header
     
     uint8_t version_ihl = raw_bytes[0];
     uint8_t version = (version_ihl >> 4) & 0x0F;
     uint8_t ihl = version_ihl & 0x0F;
     
-    if (version != 4) return nullptr; 
+    if (version != 4) return NULL; 
     
     uint8_t tos = raw_bytes[1];
     uint16_t total_length = (raw_bytes[2] << 8) | raw_bytes[3];
@@ -392,7 +392,7 @@ ipv4_t* parse_ipv4(const uint8_t* raw_bytes, size_t len) {
 }
 
 icmp_t* parse_icmp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
-    if (len < 8) return nullptr; // min ICMP header
+    if (len < 8) return NULL; // min ICMP header
     
     uint8_t type = raw_bytes[0];
     uint8_t code = raw_bytes[1];
@@ -400,7 +400,7 @@ icmp_t* parse_icmp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
     uint16_t id = (raw_bytes[4] << 8) | raw_bytes[5];
     uint16_t seq = (raw_bytes[6] << 8) | raw_bytes[7];
     
-    const void* data = nullptr;
+    const void* data = NULL;
     size_t data_len = 0;
     if (len > 8) {
         data = raw_bytes + 8;
@@ -413,7 +413,7 @@ icmp_t* parse_icmp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
 }
 
 tcp_t* parse_tcp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
-    if (len < 20) return nullptr; // min TCP header 
+    if (len < 20) return NULL; // min TCP header 
     
     uint16_t src_port = (raw_bytes[0] << 8) | raw_bytes[1];
     uint16_t dst_port = (raw_bytes[2] << 8) | raw_bytes[3];
@@ -427,7 +427,7 @@ tcp_t* parse_tcp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
     uint16_t urgent_ptr = (raw_bytes[18] << 8) | raw_bytes[19];
     
     size_t header_size = data_offset * 4;
-    const void* data = nullptr;
+    const void* data = NULL;
     size_t data_len = 0;
     if (len > header_size) {
         data = raw_bytes + header_size;
@@ -441,13 +441,13 @@ tcp_t* parse_tcp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
 }
 
 udp_t* parse_udp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
-    if (len < 8) return nullptr; // min UDP header
+    if (len < 8) return NULL; // min UDP header
     
     uint16_t src_port = (raw_bytes[0] << 8) | raw_bytes[1];
     uint16_t dst_port = (raw_bytes[2] << 8) | raw_bytes[3];
     uint16_t length = (raw_bytes[4] << 8) | raw_bytes[5];
     
-    const void* data = nullptr;
+    const void* data = NULL;
     size_t data_len = 0;
     if (len > 8) {
         data = raw_bytes + 8;
@@ -505,7 +505,7 @@ size_t parse_dns_name(const uint8_t* raw_bytes, size_t len, size_t offset, char*
 size_t parse_dns_questions(const uint8_t* raw_bytes, size_t len, size_t offset, 
                           dns_question_t** questions, uint16_t qd_count) {
     if (qd_count == 0) {
-        *questions = nullptr;
+        *questions = NULL;
         return offset;
     }
     
@@ -539,7 +539,7 @@ size_t parse_dns_questions(const uint8_t* raw_bytes, size_t len, size_t offset,
 size_t parse_dns_answers(const uint8_t* raw_bytes, size_t len, size_t offset,
                         dns_ans_t** answers, uint16_t an_count) {
     if (an_count == 0) {
-        *answers = nullptr;
+        *answers = NULL;
         return offset;
     }
     
@@ -577,7 +577,7 @@ size_t parse_dns_answers(const uint8_t* raw_bytes, size_t len, size_t offset,
             }
             offset += rdlength;
         } else {
-            (*answers)[i].rdata = nullptr;
+            (*answers)[i].rdata = NULL;
         }
     }
     
@@ -585,7 +585,7 @@ size_t parse_dns_answers(const uint8_t* raw_bytes, size_t len, size_t offset,
 }
 
 dns_t* parse_dns(const uint8_t* raw_bytes, size_t len) {
-    if (len < 12) return nullptr; // min DNS header
+    if (len < 12) return NULL; // min DNS header
     
     uint16_t id = (raw_bytes[0] << 8) | raw_bytes[1];
     uint16_t flags = (raw_bytes[2] << 8) | raw_bytes[3];
@@ -596,10 +596,10 @@ dns_t* parse_dns(const uint8_t* raw_bytes, size_t len) {
     
     size_t offset = 12; 
     
-    dns_question_t* questions = nullptr;
+    dns_question_t* questions = NULL;
     offset = parse_dns_questions(raw_bytes, len, offset, &questions, qd_count);
     
-    dns_ans_t* answers = nullptr;
+    dns_ans_t* answers = NULL;
     offset = parse_dns_answers(raw_bytes, len, offset, &answers, an_count);
     
     dns_t* dns = create_dns(id, flags, questions, qd_count, answers, an_count, ns_count, ar_count);
@@ -1089,7 +1089,7 @@ int send_packet(void* pkt, int packet_type) {
     int sockfd = create_layer3_socket();
     if (sockfd < 0) return -1;
     
-    ipv4_t* ip_packet = nullptr;
+    ipv4_t* ip_packet = NULL;
     
     if (packet_type == 0) { 
         ether_t* eth = (ether_t*)pkt;
@@ -1197,7 +1197,7 @@ int sendp(ether_t* eth_pkt, const char* interface_name) {
     if (sockfd < 0) return -1;
     
     uint8_t packet_buffer[1500];
-    size_t packet_size = ether_to_bytes(eth_pkt, packet_buffer, sizeof(packet_buffer), nullptr, 0);
+    size_t packet_size = ether_to_bytes(eth_pkt, packet_buffer, sizeof(packet_buffer), NULL, 0);
     
     if (packet_size == 0) {
         printf("Error: Failed to convert ethernet packet to bytes\n");
@@ -1242,7 +1242,7 @@ int create_layer2_recv_socket() {
 
 // Receive ethernet frame at layer 2 from any interface
 ether_t* recv_layer2(int sockfd) {
-    if (sockfd < 0) return nullptr;
+    if (sockfd < 0) return NULL;
     
     uint8_t packet_buffer[1500];
     struct sockaddr_ll addr;
@@ -1253,19 +1253,19 @@ ether_t* recv_layer2(int sockfd) {
     
     if (bytes_received < 0) {
         perror("recvfrom failed");
-        return nullptr;
+        return NULL;
     }
     
     if (bytes_received < 14) {
         printf("Received packet too small for ethernet header (%zd bytes)\n", bytes_received);
-        return nullptr;
+        return NULL;
     }
     
     printf("Received %zd bytes from interface index %d\n", bytes_received, addr.sll_ifindex);
     
     ether_t* eth_pkt = parse_ether(packet_buffer, bytes_received);
     
-    if (eth_pkt != nullptr) {
+    if (eth_pkt != NULL) {
         ether_show(eth_pkt);
     }
     
@@ -1275,7 +1275,7 @@ ether_t* recv_layer2(int sockfd) {
 // Convenience function to create socket and receive in one call
 ether_t* recv() {
     int sockfd = create_layer2_recv_socket();
-    if (sockfd < 0) return nullptr;
+    if (sockfd < 0) return NULL;
     
     ether_t* pkt = recv_layer2(sockfd);
     
@@ -1285,16 +1285,16 @@ ether_t* recv() {
 
 // Send and receive - send packet using layer 3, receive reply using layer 2
 ether_t* sr(void* pkt) {
-    if (pkt == nullptr) {
+    if (pkt == NULL) {
         printf("Error: null packet provided to sr()\n");
-        return nullptr;
+        return NULL;
     }
     
     // Send using layer 3 
     int send_result = send(pkt);
     if (send_result < 0) {
         printf("Error: failed to send packet in sr()\n");
-        return nullptr;
+        return NULL;
     }
     
     printf("Sent %d bytes, waiting for reply...\n", send_result);
@@ -1312,12 +1312,12 @@ ether_t* sniff() {
     // Receive one packet at layer 2 - parse_ether() automatically builds to layer 3 if IPv4
     ether_t* eth_pkt = recv();
     
-    if (eth_pkt == nullptr) {
+    if (eth_pkt == NULL) {
         printf("No packet received during sniff\n");
-        return nullptr;
+        return NULL;
     }
     
-    if (eth_pkt->packet.packet != nullptr) {
+    if (eth_pkt->packet.packet != NULL) {
         printf("Packet successfully built from Layer 2 to Layer 3\n");
     } else {
         printf("Packet built at Layer 2 (no Layer 3 payload detected)\n");

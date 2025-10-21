@@ -4,10 +4,11 @@
 //coded with help from Claude Code Inline Autocomplete for CS60
 //-Jason P
 
-#include <cstdint>
-#include <cstddef>
-#include <cstring>
-#include <cstdlib>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdbool.h>
 // Following only available on linux
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -119,20 +120,20 @@ typedef struct dns{
 // Constructor functions
 ether_t* create_ether(const uint8_t dst_mac[6], const uint8_t src_mac[6], uint16_t eth_type);
 ipv4_t* create_ipv4(const uint8_t src_ip[4], const uint8_t dst_ip[4], uint8_t protocol, 
-                    uint16_t total_length = 20, uint8_t ttl = 64, uint16_t identification = 0,
-                    uint8_t tos = 0, uint8_t flags = 0, uint16_t fragment_offset = 0);
-icmp_t* create_icmp(ipv4_t* ip_packet, uint8_t type, uint8_t code, uint16_t id = 0, uint16_t seq = 0, 
-                    const void* data = nullptr, size_t data_len = 0);
-tcp_t* create_tcp(ipv4_t* ip_packet, uint16_t src_port, uint16_t dst_port, uint32_t seq_num = 0, uint32_t ack_num = 0,
-                  uint16_t flags = 0, uint16_t window = 8192, uint16_t urgent_ptr = 0,
-                  const void* data = nullptr, size_t data_len = 0);
+                    uint16_t total_length, uint8_t ttl, uint16_t identification,
+                    uint8_t tos, uint8_t flags, uint16_t fragment_offset);
+icmp_t* create_icmp(ipv4_t* ip_packet, uint8_t type, uint8_t code, uint16_t id, uint16_t seq, 
+                    const void* data, size_t data_len);
+tcp_t* create_tcp(ipv4_t* ip_packet, uint16_t src_port, uint16_t dst_port, uint32_t seq_num, uint32_t ack_num,
+                  uint16_t flags, uint16_t window, uint16_t urgent_ptr,
+                  const void* data, size_t data_len);
 udp_t* create_udp(ipv4_t* ip_packet, uint16_t src_port, uint16_t dst_port, 
-                  const void* data = nullptr, size_t data_len = 0);
-dns_question_t* create_dns_question(const char* qname, uint16_t qtype = 1, uint16_t qclass = 1);
+                  const void* data, size_t data_len);
+dns_question_t* create_dns_question(const char* qname, uint16_t qtype, uint16_t qclass);
 dns_ans_t* create_dns_answer(const char* name, uint16_t type, uint16_t rr_class, uint32_t ttl,
                              const uint8_t* rdata, uint16_t rdlength);
-dns_t* create_dns(uint16_t id, uint16_t flags, dns_question_t* questions = nullptr, uint16_t qd_count = 0,
-                  dns_ans_t* answers = nullptr, uint16_t an_count = 0, uint16_t ns_count = 0, uint16_t ar_count = 0);
+dns_t* create_dns(uint16_t id, uint16_t flags, dns_question_t* questions, uint16_t qd_count,
+                  dns_ans_t* answers, uint16_t an_count, uint16_t ns_count, uint16_t ar_count);
 
 // Utility functions for checksum calculation
 uint16_t calculate_ip_checksum(const ipv4_t* ip_header);
