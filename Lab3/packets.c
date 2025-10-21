@@ -2,6 +2,13 @@
 #include <cstdlib>
 #include <cstring>
 
+/**
+ * Coded with help with of Claude Code CLI & Inline Autocomplete
+ * -Jason P
+ * 
+ */
+
+
 // Ethernet constructor - no packet_t field, no IP info
 ether_t* create_ether(const uint8_t dst_mac[6], const uint8_t src_mac[6], uint16_t eth_type) {
     ether_t* eth = (ether_t*)malloc(sizeof(ether_t));
@@ -235,7 +242,6 @@ uint16_t calculate_icmp_checksum(const icmp_t* icmp_header) {
     sum += ntohs(header[2]); // id
     sum += ntohs(header[3]); // seq
     
-    // Add data from packet_t
     if (icmp_header->packet.data && icmp_header->packet.data_len > 0) {
         uint16_t* data_ptr = (uint16_t*)icmp_header->packet.data;
         for (size_t i = 0; i < icmp_header->packet.data_len / 2; i++) {
@@ -255,10 +261,8 @@ uint16_t calculate_icmp_checksum(const icmp_t* icmp_header) {
 }
 
 uint16_t calculate_tcp_checksum(const tcp_t* tcp_header) {
-    // Pull src_ip, dst_ip, data, and data_len from packet_t
     uint32_t sum = 0;
     
-    // Add pseudo-header
     sum += (tcp_header->packet.src_ip[0] << 8) + tcp_header->packet.src_ip[1];
     sum += (tcp_header->packet.src_ip[2] << 8) + tcp_header->packet.src_ip[3];
     sum += (tcp_header->packet.dst_ip[0] << 8) + tcp_header->packet.dst_ip[1];
@@ -266,7 +270,6 @@ uint16_t calculate_tcp_checksum(const tcp_t* tcp_header) {
     sum += 6; // TCP protocol
     sum += 20 + tcp_header->packet.data_len; // TCP header length + data length
     
-    // Add TCP header (simplified)
     sum += tcp_header->src_port;
     sum += tcp_header->dst_port;
     sum += (tcp_header->seq >> 16) + (tcp_header->seq & 0xFFFF);
@@ -275,7 +278,6 @@ uint16_t calculate_tcp_checksum(const tcp_t* tcp_header) {
     sum += tcp_header->window;
     sum += tcp_header->urgent_ptr;
     
-    // Add data from packet_t
     if (tcp_header->packet.data && tcp_header->packet.data_len > 0) {
         uint16_t* data_ptr = (uint16_t*)tcp_header->packet.data;
         for (size_t i = 0; i < tcp_header->packet.data_len / 2; i++) {
@@ -295,23 +297,19 @@ uint16_t calculate_tcp_checksum(const tcp_t* tcp_header) {
 }
 
 uint16_t calculate_udp_checksum(const udp_t* udp_header) {
-    // Pull src_ip, dst_ip, data, and data_len from packet_t
     uint32_t sum = 0;
     
-    // Add pseudo-header
     sum += (udp_header->packet.src_ip[0] << 8) + udp_header->packet.src_ip[1];
     sum += (udp_header->packet.src_ip[2] << 8) + udp_header->packet.src_ip[3];
     sum += (udp_header->packet.dst_ip[0] << 8) + udp_header->packet.dst_ip[1];
     sum += (udp_header->packet.dst_ip[2] << 8) + udp_header->packet.dst_ip[3];
-    sum += 17; // UDP protocol
+    sum += 17; 
     sum += udp_header->length;
     
-    // Add UDP header
     sum += udp_header->src_port;
     sum += udp_header->dst_port;
     sum += udp_header->length;
     
-    // Add data from packet_t
     if (udp_header->packet.data && udp_header->packet.data_len > 0) {
         uint16_t* data_ptr = (uint16_t*)udp_header->packet.data;
         for (size_t i = 0; i < udp_header->packet.data_len / 2; i++) {
@@ -330,27 +328,21 @@ uint16_t calculate_udp_checksum(const udp_t* udp_header) {
     return ~sum;
 }
 
-// Parser functions
 ether_t* parse_ether(const uint8_t* raw_bytes, size_t len) {
-    if (len < 14) return nullptr; // Minimum ethernet header size
+    if (len < 14) return nullptr; // min ethernet header
     
-    // Extract bytes 0-5 for dst_mac
     uint8_t dst_mac[6];
     memcpy(dst_mac, raw_bytes, 6);
     
-    // Extract bytes 6-11 for src_mac  
     uint8_t src_mac[6];
     memcpy(src_mac, raw_bytes + 6, 6);
     
-    // Extract bytes 12-13 for type
     uint16_t eth_type = (raw_bytes[12] << 8) | raw_bytes[13];
     
-    // Call Ether constructor
     ether_t* eth = create_ether(dst_mac, src_mac, eth_type);
     
     // Check if type == 0x0800 (IPv4)
     if (eth_type == 0x0800 && len > 14) {
-        // Call IP.from_bytes(raw_bytes[14:]) and set as payload
         ipv4_t* ip_payload = parse_ipv4(raw_bytes + 14, len - 14);
         // Note: Need to add payload field to ether_t or handle this differently
         // For now, just returning the ethernet header
@@ -360,14 +352,13 @@ ether_t* parse_ether(const uint8_t* raw_bytes, size_t len) {
 }
 
 ipv4_t* parse_ipv4(const uint8_t* raw_bytes, size_t len) {
-    if (len < 20) return nullptr; // Minimum IPv4 header size
+    if (len < 20) return nullptr; // min IPv4 header
     
-    // Extract fields from IPv4 header
     uint8_t version_ihl = raw_bytes[0];
     uint8_t version = (version_ihl >> 4) & 0x0F;
     uint8_t ihl = version_ihl & 0x0F;
     
-    if (version != 4) return nullptr; // Not IPv4
+    if (version != 4) return nullptr; 
     
     uint8_t tos = raw_bytes[1];
     uint16_t total_length = (raw_bytes[2] << 8) | raw_bytes[3];
@@ -387,7 +378,6 @@ ipv4_t* parse_ipv4(const uint8_t* raw_bytes, size_t len) {
     uint8_t dst_ip[4];
     memcpy(dst_ip, raw_bytes + 16, 4);
     
-    // Call IPv4 constructor
     ipv4_t* ip = create_ipv4(src_ip, dst_ip, protocol, total_length, ttl, 
                              identification, tos, flags, fragment_offset);
     
@@ -395,16 +385,14 @@ ipv4_t* parse_ipv4(const uint8_t* raw_bytes, size_t len) {
 }
 
 icmp_t* parse_icmp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
-    if (len < 8) return nullptr; // Minimum ICMP header size
+    if (len < 8) return nullptr; // min ICMP header
     
-    // Extract header fields
     uint8_t type = raw_bytes[0];
     uint8_t code = raw_bytes[1];
     // Skip checksum at bytes 2-3
     uint16_t id = (raw_bytes[4] << 8) | raw_bytes[5];
     uint16_t seq = (raw_bytes[6] << 8) | raw_bytes[7];
     
-    // Extract data if any
     const void* data = nullptr;
     size_t data_len = 0;
     if (len > 8) {
@@ -412,16 +400,14 @@ icmp_t* parse_icmp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
         data_len = len - 8;
     }
     
-    // Call the regular constructor with extracted parameters
     icmp_t* icmp = create_icmp(ip_packet, type, code, id, seq, data, data_len);
     
     return icmp;
 }
 
 tcp_t* parse_tcp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
-    if (len < 20) return nullptr; // Minimum TCP header size
+    if (len < 20) return nullptr; // min TCP header 
     
-    // Extract header fields
     uint16_t src_port = (raw_bytes[0] << 8) | raw_bytes[1];
     uint16_t dst_port = (raw_bytes[2] << 8) | raw_bytes[3];
     uint32_t seq_num = (raw_bytes[4] << 24) | (raw_bytes[5] << 16) | (raw_bytes[6] << 8) | raw_bytes[7];
@@ -433,7 +419,6 @@ tcp_t* parse_tcp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
     // Skip checksum at bytes 16-17
     uint16_t urgent_ptr = (raw_bytes[18] << 8) | raw_bytes[19];
     
-    // Calculate actual header size and data
     size_t header_size = data_offset * 4;
     const void* data = nullptr;
     size_t data_len = 0;
@@ -442,7 +427,6 @@ tcp_t* parse_tcp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
         data_len = len - header_size;
     }
     
-    // Call the regular constructor with extracted parameters
     tcp_t* tcp = create_tcp(ip_packet, src_port, dst_port, seq_num, ack_num, 
                            flags, window, urgent_ptr, data, data_len);
     
@@ -450,15 +434,12 @@ tcp_t* parse_tcp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
 }
 
 udp_t* parse_udp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
-    if (len < 8) return nullptr; // Minimum UDP header size
+    if (len < 8) return nullptr; // min UDP header
     
-    // Extract header fields
     uint16_t src_port = (raw_bytes[0] << 8) | raw_bytes[1];
     uint16_t dst_port = (raw_bytes[2] << 8) | raw_bytes[3];
     uint16_t length = (raw_bytes[4] << 8) | raw_bytes[5];
-    // Skip checksum at bytes 6-7
     
-    // Extract data
     const void* data = nullptr;
     size_t data_len = 0;
     if (len > 8) {
@@ -466,12 +447,10 @@ udp_t* parse_udp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
         data_len = len - 8;
     }
     
-    // Call the regular constructor with extracted parameters
     udp_t* udp = create_udp(ip_packet, src_port, dst_port, data, data_len);
     
     // Check for higher layers (e.g., DNS on port 53)
     if ((src_port == 53 || dst_port == 53) && data && data_len > 0) {
-        // Create DNS object if needed and set as payload
         dns_t* dns_payload = parse_dns((const uint8_t*)data, data_len);
         // Note: Need to add a way to store the DNS payload in UDP
         // For now, just parsing but not storing
@@ -480,7 +459,6 @@ udp_t* parse_udp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len) {
     return udp;
 }
 
-// Helper function to parse DNS names (with compression support)
 size_t parse_dns_name(const uint8_t* raw_bytes, size_t len, size_t offset, char* name_buffer, size_t buffer_size) {
     size_t original_offset = offset;
     size_t name_pos = 0;
@@ -489,7 +467,6 @@ size_t parse_dns_name(const uint8_t* raw_bytes, size_t len, size_t offset, char*
     while (offset < len && name_pos < buffer_size - 1) {
         uint8_t label_len = raw_bytes[offset];
         
-        // Check for compression pointer (top 2 bits set)
         if ((label_len & 0xC0) == 0xC0) {
             if (offset + 1 >= len) break;
             uint16_t pointer = ((label_len & 0x3F) << 8) | raw_bytes[offset + 1];
@@ -499,18 +476,15 @@ size_t parse_dns_name(const uint8_t* raw_bytes, size_t len, size_t offset, char*
             continue;
         }
         
-        // End of name
         if (label_len == 0) {
             offset++;
             break;
         }
         
-        // Add dot separator (except for first label)
         if (name_pos > 0 && name_pos < buffer_size - 1) {
             name_buffer[name_pos++] = '.';
         }
         
-        // Copy label
         offset++;
         for (int i = 0; i < label_len && offset < len && name_pos < buffer_size - 1; i++) {
             name_buffer[name_pos++] = raw_bytes[offset++];
@@ -521,7 +495,6 @@ size_t parse_dns_name(const uint8_t* raw_bytes, size_t len, size_t offset, char*
     return jumped ? original_offset : offset;
 }
 
-// Helper function to parse DNS questions
 size_t parse_dns_questions(const uint8_t* raw_bytes, size_t len, size_t offset, 
                           dns_question_t** questions, uint16_t qd_count) {
     if (qd_count == 0) {
@@ -542,7 +515,6 @@ size_t parse_dns_questions(const uint8_t* raw_bytes, size_t len, size_t offset,
         uint16_t qclass = (raw_bytes[offset + 2] << 8) | raw_bytes[offset + 3];
         offset += 4;
         
-        // Allocate and copy name
         size_t name_len = strlen(name_buffer) + 1;
         (*questions)[i].qname = (char*)malloc(name_len);
         if ((*questions)[i].qname) {
@@ -580,7 +552,6 @@ size_t parse_dns_answers(const uint8_t* raw_bytes, size_t len, size_t offset,
         uint16_t rdlength = (raw_bytes[offset + 8] << 8) | raw_bytes[offset + 9];
         offset += 10;
         
-        // Allocate and copy name
         size_t name_len = strlen(name_buffer) + 1;
         (*answers)[i].name = (char*)malloc(name_len);
         if ((*answers)[i].name) {
@@ -592,7 +563,6 @@ size_t parse_dns_answers(const uint8_t* raw_bytes, size_t len, size_t offset,
         (*answers)[i].ttl = ttl;
         (*answers)[i].rdlength = rdlength;
         
-        // Copy rdata
         if (rdlength > 0 && offset + rdlength <= len) {
             (*answers)[i].rdata = (uint8_t*)malloc(rdlength);
             if ((*answers)[i].rdata) {
@@ -608,9 +578,8 @@ size_t parse_dns_answers(const uint8_t* raw_bytes, size_t len, size_t offset,
 }
 
 dns_t* parse_dns(const uint8_t* raw_bytes, size_t len) {
-    if (len < 12) return nullptr; // Minimum DNS header size
+    if (len < 12) return nullptr; // min DNS header
     
-    // Parse DNS header
     uint16_t id = (raw_bytes[0] << 8) | raw_bytes[1];
     uint16_t flags = (raw_bytes[2] << 8) | raw_bytes[3];
     uint16_t qd_count = (raw_bytes[4] << 8) | raw_bytes[5];
@@ -618,18 +587,233 @@ dns_t* parse_dns(const uint8_t* raw_bytes, size_t len) {
     uint16_t ns_count = (raw_bytes[8] << 8) | raw_bytes[9];
     uint16_t ar_count = (raw_bytes[10] << 8) | raw_bytes[11];
     
-    size_t offset = 12; // Start after header
+    size_t offset = 12; 
     
-    // Parse questions
     dns_question_t* questions = nullptr;
     offset = parse_dns_questions(raw_bytes, len, offset, &questions, qd_count);
     
-    // Parse answers
     dns_ans_t* answers = nullptr;
     offset = parse_dns_answers(raw_bytes, len, offset, &answers, an_count);
     
-    // Call DNS constructor with extracted parameters
     dns_t* dns = create_dns(id, flags, questions, qd_count, answers, an_count, ns_count, ar_count);
     
     return dns;
+}
+
+// to_bytes functions - convert struct to bytes for transmission
+size_t ether_to_bytes(const ether_t* eth, uint8_t* buffer, size_t buffer_size, void* payload, size_t payload_size) {
+    if (buffer_size < 14) return 0; // min ethernet header
+    
+    // Copy dst_mac (6 bytes)
+    memcpy(buffer, eth->dst_mac, 6);
+    
+    // Copy src_mac (6 bytes)
+    memcpy(buffer + 6, eth->src_mac, 6);
+    
+    // Copy eth_type (2 bytes)
+    memcpy(buffer + 12, eth->eth_type, 2);
+    
+    size_t total_size = 14;
+    
+    // Add payload if provided
+    if (payload && payload_size > 0 && buffer_size >= total_size + payload_size) {
+        memcpy(buffer + total_size, payload, payload_size);
+        total_size += payload_size;
+    }
+    
+    return total_size;
+}
+
+size_t ipv4_to_bytes(const ipv4_t* ip, uint8_t* buffer, size_t buffer_size) {
+    if (buffer_size < 20) return 0; // min IPv4 header
+    
+    // Byte 0: version + IHL
+    buffer[0] = (ip->version << 4) | (ip->ihl & 0x0F);
+    
+    // Byte 1: TOS
+    buffer[1] = ip->tos;
+    
+    // Bytes 2-3: total length
+    buffer[2] = (ip->total_length >> 8) & 0xFF;
+    buffer[3] = ip->total_length & 0xFF;
+    
+    // Bytes 4-5: identification
+    buffer[4] = (ip->identification >> 8) & 0xFF;
+    buffer[5] = ip->identification & 0xFF;
+    
+    // Bytes 6-7: flags + fragment offset
+    uint16_t flags_fragment = ((ip->flags & 0x07) << 13) | (ip->flags_fragment_offset & 0x1FFF);
+    buffer[6] = (flags_fragment >> 8) & 0xFF;
+    buffer[7] = flags_fragment & 0xFF;
+    
+    // Byte 8: TTL
+    buffer[8] = ip->ttl;
+    
+    // Byte 9: protocol
+    buffer[9] = ip->protocol;
+    
+    // Bytes 10-11: header checksum
+    buffer[10] = (ip->header_checksum >> 8) & 0xFF;
+    buffer[11] = ip->header_checksum & 0xFF;
+    
+    // Bytes 12-15: source IP
+    memcpy(buffer + 12, ip->src_ip, 4);
+    
+    // Bytes 16-19: destination IP
+    memcpy(buffer + 16, ip->dst_ip, 4);
+    
+    size_t total_size = 20;
+    
+    // Add payload data if present
+    if (ip->packet.data && ip->packet.data_len > 0 && buffer_size >= total_size + ip->packet.data_len) {
+        memcpy(buffer + total_size, ip->packet.data, ip->packet.data_len);
+        total_size += ip->packet.data_len;
+    }
+    
+    return total_size;
+}
+
+size_t icmp_to_bytes(const icmp_t* icmp, uint8_t* buffer, size_t buffer_size) {
+    if (buffer_size < 8) return 0; // min ICMP header
+    
+    // Byte 0: type
+    buffer[0] = icmp->type;
+    
+    // Byte 1: code
+    buffer[1] = icmp->code;
+    
+    // Bytes 2-3: checksum
+    buffer[2] = (icmp->checksum >> 8) & 0xFF;
+    buffer[3] = icmp->checksum & 0xFF;
+    
+    // Bytes 4-5: id
+    buffer[4] = (icmp->id >> 8) & 0xFF;
+    buffer[5] = icmp->id & 0xFF;
+    
+    // Bytes 6-7: seq
+    buffer[6] = (icmp->seq >> 8) & 0xFF;
+    buffer[7] = icmp->seq & 0xFF;
+    
+    size_t total_size = 8;
+    
+    // Add payload data if present
+    if (icmp->packet.data && icmp->packet.data_len > 0 && buffer_size >= total_size + icmp->packet.data_len) {
+        memcpy(buffer + total_size, icmp->packet.data, icmp->packet.data_len);
+        total_size += icmp->packet.data_len;
+    }
+    
+    return total_size;
+}
+
+size_t tcp_to_bytes(const tcp_t* tcp, uint8_t* buffer, size_t buffer_size) {
+    if (buffer_size < 20) return 0; // min TCP header
+    
+    // Bytes 0-1: source port
+    buffer[0] = (tcp->src_port >> 8) & 0xFF;
+    buffer[1] = tcp->src_port & 0xFF;
+    
+    // Bytes 2-3: destination port
+    buffer[2] = (tcp->dst_port >> 8) & 0xFF;
+    buffer[3] = tcp->dst_port & 0xFF;
+    
+    // Bytes 4-7: sequence number
+    buffer[4] = (tcp->seq >> 24) & 0xFF;
+    buffer[5] = (tcp->seq >> 16) & 0xFF;
+    buffer[6] = (tcp->seq >> 8) & 0xFF;
+    buffer[7] = tcp->seq & 0xFF;
+    
+    // Bytes 8-11: acknowledgment number
+    buffer[8] = (tcp->ack >> 24) & 0xFF;
+    buffer[9] = (tcp->ack >> 16) & 0xFF;
+    buffer[10] = (tcp->ack >> 8) & 0xFF;
+    buffer[11] = tcp->ack & 0xFF;
+    
+    // Bytes 12-13: data offset + reserved + flags
+    buffer[12] = ((tcp->data_offset & 0x0F) << 4) | ((tcp->flags >> 8) & 0x01);
+    buffer[13] = tcp->flags & 0xFF;
+    
+    // Bytes 14-15: window
+    buffer[14] = (tcp->window >> 8) & 0xFF;
+    buffer[15] = tcp->window & 0xFF;
+    
+    // Bytes 16-17: checksum
+    buffer[16] = (tcp->checksum >> 8) & 0xFF;
+    buffer[17] = tcp->checksum & 0xFF;
+    
+    // Bytes 18-19: urgent pointer
+    buffer[18] = (tcp->urgent_ptr >> 8) & 0xFF;
+    buffer[19] = tcp->urgent_ptr & 0xFF;
+    
+    size_t total_size = 20;
+    
+    // Add payload data if present
+    if (tcp->packet.data && tcp->packet.data_len > 0 && buffer_size >= total_size + tcp->packet.data_len) {
+        memcpy(buffer + total_size, tcp->packet.data, tcp->packet.data_len);
+        total_size += tcp->packet.data_len;
+    }
+    
+    return total_size;
+}
+
+size_t udp_to_bytes(const udp_t* udp, uint8_t* buffer, size_t buffer_size) {
+    if (buffer_size < 8) return 0; // min UDP header
+    
+    // Bytes 0-1: source port
+    buffer[0] = (udp->src_port >> 8) & 0xFF;
+    buffer[1] = udp->src_port & 0xFF;
+    
+    // Bytes 2-3: destination port
+    buffer[2] = (udp->dst_port >> 8) & 0xFF;
+    buffer[3] = udp->dst_port & 0xFF;
+    
+    // Bytes 4-5: length
+    buffer[4] = (udp->length >> 8) & 0xFF;
+    buffer[5] = udp->length & 0xFF;
+    
+    // Bytes 6-7: checksum
+    buffer[6] = (udp->checksum >> 8) & 0xFF;
+    buffer[7] = udp->checksum & 0xFF;
+    
+    size_t total_size = 8;
+    
+    // Add payload data if present
+    if (udp->packet.data && udp->packet.data_len > 0 && buffer_size >= total_size + udp->packet.data_len) {
+        memcpy(buffer + total_size, udp->packet.data, udp->packet.data_len);
+        total_size += udp->packet.data_len;
+    }
+    
+    return total_size;
+}
+
+size_t dns_to_bytes(const dns_t* dns, uint8_t* buffer, size_t buffer_size) {
+    if (buffer_size < 12) return 0; // min DNS header
+    
+    // Bytes 0-1: id
+    buffer[0] = (dns->id >> 8) & 0xFF;
+    buffer[1] = dns->id & 0xFF;
+    
+    // Bytes 2-3: flags
+    buffer[2] = (dns->flags >> 8) & 0xFF;
+    buffer[3] = dns->flags & 0xFF;
+    
+    // Bytes 4-5: question count
+    buffer[4] = (dns->qd_count >> 8) & 0xFF;
+    buffer[5] = dns->qd_count & 0xFF;
+    
+    // Bytes 6-7: answer count
+    buffer[6] = (dns->an_count >> 8) & 0xFF;
+    buffer[7] = dns->an_count & 0xFF;
+    
+    // Bytes 8-9: authority count
+    buffer[8] = (dns->ns_count >> 8) & 0xFF;
+    buffer[9] = dns->ns_count & 0xFF;
+    
+    // Bytes 10-11: additional count
+    buffer[10] = (dns->ar_count >> 8) & 0xFF;
+    buffer[11] = dns->ar_count & 0xFF;
+    
+    // Note: Full DNS serialization would require encoding questions/answers
+    // This is a simplified version that only handles the header
+    
+    return 12;
 }

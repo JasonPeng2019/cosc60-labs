@@ -1,7 +1,8 @@
 #ifndef PACKETS_H
 #define PACKETS_H
 
-//coded with help from Claude Code Inline Autocomplete
+//coded with help from Claude Code Inline Autocomplete for CS60
+//-Jason P
 
 #include <cstdint>
 #include <cstddef>
@@ -11,10 +12,10 @@
 typedef struct packet_t
 {
     void * packet;
-    const void * data; // the base data (WITHOUT the headers)
-    uint8_t data_len; // base data length (NO HEADERS)
-    uint8_t src_ip[4];
-    uint8_t dst_ip[4];
+    const void * data; // the base data (WITHOUT the headers) - NULL when not applicable
+    uint8_t data_len; // base data length (NO HEADERS) - NULL when not applicable
+    uint8_t src_ip[4]; // src ip address (ipv4) - NULL when not in icmp+ pack struct
+    uint8_t dst_ip[4]; // dst ip address (ipv4) - NULL when not in icmp+ pack struct
 } packet_t;
 
 typedef struct ether{
@@ -137,5 +138,13 @@ icmp_t* parse_icmp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len);
 tcp_t* parse_tcp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len);
 udp_t* parse_udp(ipv4_t* ip_packet, const uint8_t* raw_bytes, size_t len);
 dns_t* parse_dns(const uint8_t* raw_bytes, size_t len);
+
+// to_bytes functions - convert struct to bytes for transmission
+size_t ether_to_bytes(const ether_t* eth, uint8_t* buffer, size_t buffer_size, void* payload, size_t payload_size);
+size_t ipv4_to_bytes(const ipv4_t* ip, uint8_t* buffer, size_t buffer_size);
+size_t icmp_to_bytes(const icmp_t* icmp, uint8_t* buffer, size_t buffer_size);
+size_t tcp_to_bytes(const tcp_t* tcp, uint8_t* buffer, size_t buffer_size);
+size_t udp_to_bytes(const udp_t* udp, uint8_t* buffer, size_t buffer_size);
+size_t dns_to_bytes(const dns_t* dns, uint8_t* buffer, size_t buffer_size);
 
 #endif // PACKETS_H
