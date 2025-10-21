@@ -1265,7 +1265,6 @@ int create_layer2_recv_socket() {
     return sockfd;
 }
 
-// Receive ethernet frame at layer 2 from any interface
 
 // Send packet at layer 3, receive reply at layer 2 and recursively parse to last layer
 ether_t* sr(void* pkt) {
@@ -1307,22 +1306,18 @@ ether_t* sr(void* pkt) {
     
     printf("Received %zd bytes, parsing layers...\n", bytes_received);
     
-    // Start recursive parsing from Layer 2
     size_t offset = 0;
     
-    // Parse Ethernet layer
     ether_t* eth = parse_ether(packet_buffer + offset, bytes_received - offset);
     if (!eth) return NULL;
     offset += 14;
     
-    // Parse IP layer if present
     if (eth->eth_type[0] == 0x08 && eth->eth_type[1] == 0x00 && (ssize_t)offset < bytes_received) {
         ipv4_t* ip = parse_ipv4(packet_buffer + offset, bytes_received - offset);
         if (ip) {
             eth->packet.packet = ip;
             offset += 20; // IP header size
             
-            // Parse transport layer based on protocol
             if (ip->protocol == 1 && (ssize_t)offset < bytes_received) {  // ICMP
                 icmp_t* icmp = parse_icmp(ip, packet_buffer + offset, bytes_received - offset);
                 if (icmp) {
@@ -1333,7 +1328,7 @@ ether_t* sr(void* pkt) {
                 tcp_t* tcp = parse_tcp(ip, packet_buffer + offset, bytes_received - offset);
                 if (tcp) {
                     ip->packet.packet = tcp;
-                    // TCP header size varies based on data_offset field
+                    // NOTE!!! TCP header size varies based on data_offset field
                     offset += tcp->data_offset * 4;
                 }
             } else if (ip->protocol == 17 && (ssize_t)offset < bytes_received) {  // UDP
@@ -1342,7 +1337,6 @@ ether_t* sr(void* pkt) {
                     ip->packet.packet = udp;
                     offset += 8; // UDP header size
                     
-                    // Parse application layer (e.g., DNS)
                     if ((udp->src_port == 53 || udp->dst_port == 53) && (ssize_t)offset < bytes_received) {
                         dns_t* dns = parse_dns(packet_buffer + offset, bytes_received - offset);
                         if (dns) {
@@ -1354,17 +1348,14 @@ ether_t* sr(void* pkt) {
         }
     }
     
-    // Display the parsed packet
     if (eth) {
         printf("\n=== Received Packet ===\n");
         ether_show(eth);
         
-        // Show IP layer if present
         if (eth->packet.packet) {
             ipv4_t* ip = (ipv4_t*)eth->packet.packet;
             ipv4_show(ip);
             
-            // Show transport layer if present
             if (ip->packet.packet) {
                 if (ip->protocol == 1) {  // ICMP
                     icmp_show((icmp_t*)ip->packet.packet);
@@ -1374,7 +1365,6 @@ ether_t* sr(void* pkt) {
                     udp_t* udp = (udp_t*)ip->packet.packet;
                     udp_show(udp);
                     
-                    // Show DNS if present
                     if (udp->packet.packet) {
                         dns_show((dns_t*)udp->packet.packet);
                     }
@@ -1391,7 +1381,6 @@ ether_t* sr(void* pkt) {
 ether_t* sniff() {
     printf("Sniffing for packet at layer 2...\n");
     
-    // Receive raw bytes at layer 2 
     int sockfd = create_layer2_recv_socket();
     if (sockfd < 0) return NULL;
     
@@ -1415,22 +1404,18 @@ ether_t* sniff() {
     
     printf("Received %zd bytes, parsing layers...\n", bytes_received);
     
-    // Start recursive parsing from Layer 2
     size_t offset = 0;
     
-    // Parse Ethernet layer
     ether_t* eth = parse_ether(packet_buffer + offset, bytes_received - offset);
     if (!eth) return NULL;
     offset += 14;
     
-    // Parse IP layer if present
     if (eth->eth_type[0] == 0x08 && eth->eth_type[1] == 0x00 && (ssize_t)offset < bytes_received) {
         ipv4_t* ip = parse_ipv4(packet_buffer + offset, bytes_received - offset);
         if (ip) {
             eth->packet.packet = ip;
-            offset += 20; // IP header size
+            offset += 20; // IP headersize
             
-            // Parse transport layer based on protocol
             if (ip->protocol == 1 && (ssize_t)offset < bytes_received) {  // ICMP
                 icmp_t* icmp = parse_icmp(ip, packet_buffer + offset, bytes_received - offset);
                 if (icmp) {
@@ -1450,7 +1435,6 @@ ether_t* sniff() {
                     ip->packet.packet = udp;
                     offset += 8; // UDP header size
                     
-                    // Parse application layer (e.g., DNS)
                     if ((udp->src_port == 53 || udp->dst_port == 53) && (ssize_t)offset < bytes_received) {
                         dns_t* dns = parse_dns(packet_buffer + offset, bytes_received - offset);
                         if (dns) {
@@ -1462,17 +1446,14 @@ ether_t* sniff() {
         }
     }
     
-    // Display the parsed packet
     if (eth) {
         printf("\n=== Received Packet ===\n");
         ether_show(eth);
         
-        // Show IP layer if present
         if (eth->packet.packet) {
             ipv4_t* ip = (ipv4_t*)eth->packet.packet;
             ipv4_show(ip);
             
-            // Show transport layer if present
             if (ip->packet.packet) {
                 if (ip->protocol == 1) {  // ICMP
                     icmp_show((icmp_t*)ip->packet.packet);
@@ -1482,7 +1463,6 @@ ether_t* sniff() {
                     udp_t* udp = (udp_t*)ip->packet.packet;
                     udp_show(udp);
                     
-                    // Show DNS if present
                     if (udp->packet.packet) {
                         dns_show((dns_t*)udp->packet.packet);
                     }
