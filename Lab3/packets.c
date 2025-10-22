@@ -1251,9 +1251,28 @@ int create_layer2_recv_socket() {
         return -1;
     }
     
-    // timeout = 5s
+    // Put interface in promiscuous mode (like tcpdump does)
+    struct ifreq ifr;
+    strcpy(ifr.ifr_name, "enp0s3");
+    
+    // Get current flags
+    if (ioctl(sockfd, SIOCGIFFLAGS, &ifr) < 0) {
+        perror("ioctl SIOCGIFFLAGS failed");
+        printf("Warning: Could not get interface flags, continuing anyway...\n");
+    } else {
+        // Add promiscuous mode flag
+        ifr.ifr_flags |= IFF_PROMISC;
+        if (ioctl(sockfd, SIOCSIFFLAGS, &ifr) < 0) {
+            perror("ioctl SIOCSIFFLAGS failed");
+            printf("Warning: Could not set promiscuous mode, continuing anyway...\n");
+        } else {
+            printf("DEBUG: Successfully enabled promiscuous mode on enp0s3\n");
+        }
+    }
+    
+    // timeout = 30s
     struct timeval timeout;
-    timeout.tv_sec = 5;
+    timeout.tv_sec = 30;
     timeout.tv_usec = 0;
     
     if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
@@ -1273,6 +1292,41 @@ ether_t* sr(void* pkt) {
         return NULL;
     }
     
+    // Step 1: Extract request details before sending
+    ipv4_t* request_ip = (ipv4_t*)pkt;
+    uint8_t expected_src_ip[4], expected_dst_ip[4];
+    uint16_t expected_src_port = 0, expected_dst_port = 0;
+    uint16_t expected_id = 0;
+    uint8_t expected_protocol = request_ip->protocol;
+    
+    // Store expected response details (response will have src/dst swapped)
+    memcpy(expected_src_ip, request_ip->dst_ip, 4);
+    memcpy(expected_dst_ip, request_ip->src_ip, 4);
+    
+    // Extract protocol-specific identifiers
+    if (request_ip->protocol == 17 && request_ip->packet.packet) {  // UDP
+        udp_t* request_udp = (udp_t*)request_ip->packet.packet;
+        expected_src_port = request_udp->dst_port;
+        expected_dst_port = request_udp->src_port;
+        
+        if (request_udp->packet.packet) {  // DNS
+            dns_t* request_dns = (dns_t*)request_udp->packet.packet;
+            expected_id = request_dns->id;
+        }
+    } else if (request_ip->protocol == 6 && request_ip->packet.packet) {  // TCP
+        tcp_t* request_tcp = (tcp_t*)request_ip->packet.packet;
+        expected_src_port = request_tcp->dst_port;
+        expected_dst_port = request_tcp->src_port;
+    } else if (request_ip->protocol == 1 && request_ip->packet.packet) {  // ICMP
+        icmp_t* request_icmp = (icmp_t*)request_ip->packet.packet;
+        expected_id = request_icmp->id;
+    }
+    
+    printf("Expecting response: %d.%d.%d.%d:%d -> %d.%d.%d.%d:%d (proto=%d, id=%d)\n",
+           expected_src_ip[0], expected_src_ip[1], expected_src_ip[2], expected_src_ip[3], expected_src_port,
+           expected_dst_ip[0], expected_dst_ip[1], expected_dst_ip[2], expected_dst_ip[3], expected_dst_port,
+           expected_protocol, expected_id);
+    
     // Send using layer 3 
     int send_result = send_f(pkt);
     if (send_result < 0) {
@@ -1282,29 +1336,76 @@ ether_t* sr(void* pkt) {
     
     printf("Sent %d bytes at layer 3, waiting for reply...\n", send_result);
     
-    // Receive raw bytes at layer 2 
+    // Step 4: Add timeout and retry logic
     int sockfd = create_layer2_recv_socket();
     if (sockfd < 0) return NULL;
     
     uint8_t packet_buffer[1500];
     struct sockaddr_ll addr;
     socklen_t addr_len = sizeof(addr);
+    ssize_t bytes_received = -1;
     
-    ssize_t bytes_received = recvfrom(sockfd, packet_buffer, sizeof(packet_buffer), 0,
-                                     (struct sockaddr*)&addr, &addr_len);
+    // Try up to 10 packets to find a matching response
+    for (int attempt = 0; attempt < 10; attempt++) {
+        printf("DEBUG: Attempt %d - waiting for packet...\n", attempt + 1);
+        
+        bytes_received = recvfrom(sockfd, packet_buffer, sizeof(packet_buffer), 0,
+                                 (struct sockaddr*)&addr, &addr_len);
+        
+        if (bytes_received < 0) {
+            printf("DEBUG: recvfrom failed or timed out\n");
+            printf("Timeout: No reply received within 30 seconds\n");
+            close(sockfd);
+            return NULL;
+        }
+        
+        printf("DEBUG: Received %zd bytes, interface: %d\n", bytes_received, addr.sll_ifindex);
+        
+        if (bytes_received < 14) {
+            printf("DEBUG: Packet too small, continuing...\n");
+            printf("Packet too small (%zd bytes), trying again...\n", bytes_received);
+            continue;
+        }
+        
+        printf("DEBUG: Ethernet type: %02x%02x\n", packet_buffer[12], packet_buffer[13]);
+        
+        // Filter out ARP packets, accept any IPv4 packets
+        if (packet_buffer[12] != 0x08 || packet_buffer[13] != 0x00) {
+            printf("DEBUG: Non-IPv4 packet (type: %02x%02x), ignoring...\n", 
+                   packet_buffer[12], packet_buffer[13]);
+            continue;
+        }
+        
+        printf("DEBUG: Found IPv4 packet, checking if it's for us...\n");
+        
+        // Simple matching - just check if it's destined for our IP
+        if (bytes_received >= 34) {  // Ethernet + IP header minimum
+            uint8_t* ip_header = packet_buffer + 14;
+            uint8_t* resp_dst_ip = ip_header + 16;
+            uint8_t resp_protocol = ip_header[9];
+            
+            printf("DEBUG: Expected dst=%d.%d.%d.%d\n",
+                   expected_dst_ip[0], expected_dst_ip[1], expected_dst_ip[2], expected_dst_ip[3]);
+            
+            printf("DEBUG: Received dst=%d.%d.%d.%d, proto=%d\n",
+                   resp_dst_ip[0], resp_dst_ip[1], resp_dst_ip[2], resp_dst_ip[3], resp_protocol);
+            
+            // Accept any packet destined for our IP
+            if (memcmp(resp_dst_ip, expected_dst_ip, 4) == 0) {
+                printf("DEBUG: ✓ MATCH! Packet is for our IP (proto=%d)!\n", resp_protocol);
+                break;
+            } else {
+                printf("DEBUG: ✗ Packet not for us, continuing...\n");
+                continue;
+            }
+        } else {
+            printf("DEBUG: Packet too small (%zd bytes) for IP analysis\n", bytes_received);
+            continue;
+        }
+    }
+    
     close(sockfd);
-    
-    if (bytes_received < 0) {
-        printf("Timeout: No reply received within 5 seconds\n");
-        return NULL;
-    }
-    
-    if (bytes_received < 14) {
-        printf("Received packet too small for ethernet header (%zd bytes)\n", bytes_received);
-        return NULL;
-    }
-    
-    printf("Received %zd bytes, parsing layers...\n", bytes_received);
+    printf("Processing received packet (%zd bytes)...\n", bytes_received);
     
     size_t offset = 0;
     
@@ -1393,7 +1494,7 @@ ether_t* sniff() {
     close(sockfd);
     
     if (bytes_received < 0) {
-        printf("Timeout: No reply received within 5 seconds\n");
+        printf("Timeout: No reply received within 30 seconds\n");
         return NULL;
     }
     

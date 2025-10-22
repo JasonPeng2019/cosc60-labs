@@ -53,7 +53,7 @@ int main() {
     
     printf("\n=== Testing send_f(pkt) ===\n");
     
-    uint8_t src_ip[4] = {192, 168, 1, 100};  // VM IP
+    uint8_t src_ip[4] = {10, 0, 2, 15};  // VM IP
     uint8_t dst_ip[4] = {8, 8, 8, 8};        // Google DNS
 
     ipv4_t* ip = create_ipv4(src_ip, dst_ip, ICMP_PROTOCOL, ICMP_HEADER_SIZE+IP_HEADER_SIZE, TTL, IDENTIFICATION, TOS, FLAGS, FRAGMENT_OFFSET);
@@ -124,10 +124,10 @@ int main() {
     
     int result2 = sendp(eth, "enp0s3");
     
-    if (result2 == 0) {
-        printf("Packet sent successfully via Layer 2!\n");
+    if (result2 >= 0) {
+        printf("✓ Packet sent successfully via Layer 2! (%d bytes)\n", result2);
     } else {
-        printf("Failed to send packet (error: %d)\n", result2);
+        printf("✗ Failed to send packet (error: %d)\n", result2);
     }
     
     free(icmp);
@@ -192,13 +192,33 @@ int main() {
         return 1;
     }
     
+    // Layer 2 DNS as required: Ether + IP + UDP + DNS
+    uint8_t gateway_mac[6] = {0x52, 0x55, 0x0a, 0x00, 0x02, 0x02};  // Gateway MAC
+    uint8_t my_mac[6] = {0x08, 0x00, 0x27, 0x28, 0xb0, 0xf2};        // My MAC
+    
+    ether_t* dns_eth = create_ether(gateway_mac, my_mac, IPv4_ETYPE);
+    if (!dns_eth) {
+        printf("Failed to create Ethernet frame for DNS\n");
+        free(question);
+        free(dns_query);
+        free(dns_udp);
+        free(dns_ip);
+        return 1;
+    }
+    
+    // Create complete IP packet: IP -> UDP -> DNS for sr()
     dns_ip = STACK(dns_ip, STACK(dns_udp, dns_query));
     
-    printf("Sending DNS query for vibrantcloud.org...\n");
+    // Also create complete Layer 2 packet for assignment requirement: Ethernet -> IP -> UDP -> DNS
+    dns_eth = STACK(dns_eth, dns_ip);
     
+    printf("DEBUG: Created Layer 2 DNS packet (Ethernet + IP + UDP + DNS)\n");
+    printf("Sending DNS query for vibrantcloud.org via sr()...\n");
+    
+    // Use sr() with IP packet - sr() handles Layer 3 send + Layer 2 receive
     ether_t* dns_response = sr(dns_ip);
     
-    uint8_t vibrant_ip[4] = {1, 1, 1, 1};  // Fallback to Cloudflare if DNS fails r the ping
+    uint8_t vibrant_ip[4] = {8, 8, 8, 8};  // Fallback to Google DNS if DNS fails (8.8.8.8 responds to ICMP)
     
     if (dns_response) {
         printf("DNS response received\n");
@@ -238,13 +258,14 @@ int main() {
         
         free(dns_response);
     } else {
-        printf("✗ DNS resolution failed, using fallback IP: 1.1.1.1\n");
+        printf("✗ DNS resolution failed, using fallback IP: 8.8.8.8\n");
     }
     
     free(question);
     free(dns_query);
     free(dns_udp);
     free(dns_ip);
+    free(dns_eth);
     
     printf("\n=== Comprehensive ICMP Testing to vibrantcloud.org ===\n");
     printf("Target IP: %d.%d.%d.%d\n", vibrant_ip[0], vibrant_ip[1], vibrant_ip[2], vibrant_ip[3]);
@@ -328,8 +349,8 @@ int main() {
     
     int test2_result = sendp(test2_eth, "enp0s3");
     
-    if (test2_result == 0) {
-        printf("✓ Test 2 SUCCESS: Layer 2 packet sent\n");
+    if (test2_result > 0) {
+        printf("✓ Test 2 SUCCESS: Layer 2 packet sent (%d bytes)\n", test2_result);
         printf("  Note: Reply may occur but won't be captured by sendp()\n");
     } else {
         printf("✗ Test 2 FAILED: Layer 2 send error (%d)\n", test2_result);

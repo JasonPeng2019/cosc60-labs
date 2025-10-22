@@ -1,0 +1,308 @@
+Hello World!
+
+=== Testing send_f(pkt) ===
+Sending ICMP echo request to 8.8.8.8...
+Sent 32 bytes at layer 3
+✓ Packet sent successfully via Layer 3 (32 bytes)
+
+Press Enter to continue to Layer 2 test...
+
+=== Testing sendp() ===
+Sending Ethernet frame with ICMP payload...
+Sent 46 bytes at layer 2
+✓ Packet sent successfully via Layer 2! (46 bytes)
+
+Press Enter to continue to vibrantcloud.org test...
+
+=== Testing DNS resolution and ping to vibrantcloud.org ===
+Resolving vibrantcloud.org via DNS...
+DEBUG: Created Layer 2 DNS packet (Ethernet + IP + UDP + DNS)
+Sending DNS query for vibrantcloud.org via sr()...
+Expecting response: 8.8.8.8:53 -> 10.0.2.15:12345 (proto=17, id=1234)
+Sent 40 bytes at layer 3
+Sent 40 bytes at layer 3, waiting for reply...
+DEBUG: Successfully enabled promiscuous mode on enp0s3
+DEBUG: Attempt 1 - waiting for packet...
+DEBUG: Received 54 bytes, interface: 2
+DEBUG: Ethernet type: 0800
+DEBUG: Found IPv4 packet, checking if it's for us...
+DEBUG: Expected dst=10.0.2.15
+DEBUG: Received dst=150.171.74.16, proto=6
+DEBUG: ✗ Packet not for us, continuing...
+DEBUG: Attempt 2 - waiting for packet...
+DEBUG: Received 60 bytes, interface: 2
+DEBUG: Ethernet type: 0800
+DEBUG: Found IPv4 packet, checking if it's for us...
+DEBUG: Expected dst=10.0.2.15
+DEBUG: Received dst=10.0.2.15, proto=6
+DEBUG: ✓ MATCH! Packet is for our IP (proto=6)!
+Processing received packet (60 bytes)...
+
+=== Received Packet ===
+### Ether ###
+  dst_mac: 08:00:27:28:b0:f2
+  src_mac: 52:55:0a:00:02:02
+  type: 0800
+  ### IP ###
+    version: 4
+    ihl: 5
+    tos: 0
+    total_len: 40
+    ident: 14780
+    flags_frag: 0000
+    ttl: 64
+    proto: 6
+    checksum: e05d
+    src_ip: 150.171.74.16
+    dst_ip: 10.0.2.15
+    ### TCP ###
+      src_port: 443
+      dst_port: 52630
+      seq: 1627607467
+      ack: 1160702359
+      data_offset: 5
+      flags: 0010
+      window: 65535
+      checksum: 123e
+      urgent_ptr: 0
+      data: 000000000000
+======================
+
+DNS response received
+DNS response missing UDP layer
+
+=== Comprehensive ICMP Testing to vibrantcloud.org ===
+Target IP: 8.8.8.8
+
+--- Test 1: send_f() Layer 3 Routing ---
+Sending ICMP via Layer 3 routing...
+Sent 32 bytes at layer 3
+✓ Test 1 SUCCESS: Layer 3 packet sent (32 bytes)
+  Note: Reply may occur but won't be captured by send_f()
+
+--- Test 2: sendp() Layer 2 Direct ---
+Sending ICMP via Layer 2 direct (real MACs)...
+  Src MAC: 08:00:27:28:b0:f2
+  Dst MAC: 52:55:0a:00:02:02
+Sent 46 bytes at layer 2
+✓ Test 2 SUCCESS: Layer 2 packet sent (46 bytes)
+  Note: Reply may occur but won't be captured by sendp()
+
+--- Test 3: sr() Send and Receive ---
+Sending ICMP and waiting for reply...
+Expecting response: 8.8.8.8:0 -> 10.0.2.15:0 (proto=1, id=1234)
+Sent 32 bytes at layer 3
+Sent 32 bytes at layer 3, waiting for reply...
+DEBUG: Successfully enabled promiscuous mode on enp0s3
+DEBUG: Attempt 1 - waiting for packet...
+DEBUG: Received 54 bytes, interface: 2
+DEBUG: Ethernet type: 0800
+DEBUG: Found IPv4 packet, checking if it's for us...
+DEBUG: Expected dst=10.0.2.15
+DEBUG: Received dst=13.107.5.93, proto=6
+DEBUG: ✗ Packet not for us, continuing...
+DEBUG: Attempt 2 - waiting for packet...
+DEBUG: Received 60 bytes, interface: 2
+DEBUG: Ethernet type: 0800
+DEBUG: Found IPv4 packet, checking if it's for us...
+DEBUG: Expected dst=10.0.2.15
+DEBUG: Received dst=10.0.2.15, proto=6
+DEBUG: ✓ MATCH! Packet is for our IP (proto=6)!
+Processing received packet (60 bytes)...
+
+=== Received Packet ===
+### Ether ###
+  dst_mac: 08:00:27:28:b0:f2
+  src_mac: 52:55:0a:00:02:02
+  type: 0800
+  ### IP ###
+    version: 4
+    ihl: 5
+    tos: 0
+    total_len: 40
+    ident: 14781
+    flags_frag: 0000
+    ttl: 64
+    proto: 6
+    checksum: 93e6
+    src_ip: 13.107.5.93
+    dst_ip: 10.0.2.15
+    ### TCP ###
+      src_port: 443
+      dst_port: 48690
+      seq: 1626695481
+      ack: 1384653440
+      data_offset: 5
+      flags: 0010
+      window: 65535
+      checksum: 93d3
+      urgent_ptr: 0
+      data: 000000000000
+======================
+
+✓ Test 3 SUCCESS: ICMP reply received!
+  ICMP Reply Details:
+    Type: 187 (0 = Echo Reply)
+    Code: 1
+    ID: 26425
+    Sequence: 24821
+    From IP: 13.107.5.93
+  ⚠ Received ICMP type 187 (not Echo Reply)
+
+=== End Comprehensive ICMP Testing ===
+
+Press Enter to continue to TCP HTTP test...
+
+=== Testing TCP HTTP GET to vibrantcloud.org ===
+Setting firewall rule to prevent RST interference...
+✓ Firewall rule set successfully
+Starting TCP three-way handshake...
+1. Sending SYN packet...
+Expecting response: 8.8.8.8:80 -> 10.0.2.15:12345 (proto=6, id=0)
+Sent 40 bytes at layer 3
+Sent 40 bytes at layer 3, waiting for reply...
+DEBUG: Successfully enabled promiscuous mode on enp0s3
+DEBUG: Attempt 1 - waiting for packet...
+DEBUG: Received 100 bytes, interface: 2
+DEBUG: Ethernet type: 0800
+DEBUG: Found IPv4 packet, checking if it's for us...
+DEBUG: Expected dst=10.0.2.15
+DEBUG: Received dst=10.3.0.1, proto=17
+DEBUG: ✗ Packet not for us, continuing...
+DEBUG: Attempt 2 - waiting for packet...
+DEBUG: Received 436 bytes, interface: 2
+DEBUG: Ethernet type: 0800
+DEBUG: Found IPv4 packet, checking if it's for us...
+DEBUG: Expected dst=10.0.2.15
+DEBUG: Received dst=10.0.2.15, proto=17
+DEBUG: ✓ MATCH! Packet is for our IP (proto=17)!
+Processing received packet (436 bytes)...
+
+=== Received Packet ===
+### Ether ###
+  dst_mac: 08:00:27:28:b0:f2
+  src_mac: 52:55:0a:00:02:02
+  type: 0800
+  ### IP ###
+    version: 4
+    ihl: 5
+    tos: 0
+    total_len: 422
+    ident: 14785
+    flags_frag: 0000
+    ttl: 64
+    proto: 17
+    checksum: efe9
+    src_ip: 10.3.0.1
+    dst_ip: 10.0.2.15
+    ### UDP ###
+      src_port: 53
+      dst_port: 49053
+      length: 402
+      checksum: 65ba
+      data: 24b981800001000c0000000112636f6e6e65637469766974792d636865636b06...
+      ### DNS ###
+        id: 9401
+        flags: 8180
+        qd_count: 1
+        an_count: 12
+        ns_count: 0
+        ar_count: 1
+        question[0]: connectivity-check.ubuntu.com (type=28, class=1)
+        answer[0]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[1]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[2]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[3]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[4]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[5]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[6]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[7]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[8]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[9]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[10]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+        answer[11]: connectivity-check.ubuntu.com (type=28, class=1, ttl=58)
+======================
+
+✓ SYN-ACK received
+⚠ Received TCP packet but not SYN-ACK
+2. Sending ACK packet...
+Sent 40 bytes at layer 3
+✓ ACK sent successfully - TCP connection established! (40 bytes)
+3. Sending HTTP GET request...
+Expecting response: 8.8.8.8:80 -> 10.0.2.15:12345 (proto=6, id=0)
+Sent 111 bytes at layer 3
+Sent 111 bytes at layer 3, waiting for reply...
+DEBUG: Successfully enabled promiscuous mode on enp0s3
+DEBUG: Attempt 1 - waiting for packet...
+DEBUG: Received 42 bytes, interface: 2
+DEBUG: Ethernet type: 0806
+DEBUG: Non-IPv4 packet (type: 0806), ignoring...
+DEBUG: Attempt 2 - waiting for packet...
+DEBUG: Received 64 bytes, interface: 2
+DEBUG: Ethernet type: 0806
+DEBUG: Non-IPv4 packet (type: 0806), ignoring...
+DEBUG: Attempt 3 - waiting for packet...
+DEBUG: Received 110 bytes, interface: 2
+DEBUG: Ethernet type: 86dd
+DEBUG: Non-IPv4 packet (type: 86dd), ignoring...
+DEBUG: Attempt 4 - waiting for packet...
+DEBUG: Received 150 bytes, interface: 2
+DEBUG: Ethernet type: 86dd
+DEBUG: Non-IPv4 packet (type: 86dd), ignoring...
+DEBUG: Attempt 5 - waiting for packet...
+DEBUG: Received 150 bytes, interface: 2
+DEBUG: Ethernet type: 86dd
+DEBUG: Non-IPv4 packet (type: 86dd), ignoring...
+DEBUG: Attempt 6 - waiting for packet...
+DEBUG: Received 54 bytes, interface: 2
+DEBUG: Ethernet type: 0800
+DEBUG: Found IPv4 packet, checking if it's for us...
+DEBUG: Expected dst=10.0.2.15
+DEBUG: Received dst=52.182.143.211, proto=6
+DEBUG: ✗ Packet not for us, continuing...
+DEBUG: Attempt 7 - waiting for packet...
+DEBUG: Received 60 bytes, interface: 2
+DEBUG: Ethernet type: 0800
+DEBUG: Found IPv4 packet, checking if it's for us...
+DEBUG: Expected dst=10.0.2.15
+DEBUG: Received dst=10.0.2.15, proto=6
+DEBUG: ✓ MATCH! Packet is for our IP (proto=6)!
+Processing received packet (60 bytes)...
+
+=== Received Packet ===
+### Ether ###
+  dst_mac: 08:00:27:28:b0:f2
+  src_mac: 52:55:0a:00:02:02
+  type: 0800
+  ### IP ###
+    version: 4
+    ihl: 5
+    tos: 0
+    total_len: 40
+    ident: 14786
+    flags_frag: 0000
+    ttl: 64
+    proto: 6
+    checksum: 1dbf
+    src_ip: 52.182.143.211
+    dst_ip: 10.0.2.15
+    ### TCP ###
+      src_port: 443
+      dst_port: 39190
+      seq: 1627400380
+      ack: 1473717351
+      data_offset: 5
+      flags: 0010
+      window: 65535
+      checksum: 3e6a
+      urgent_ptr: 0
+      data: 000000000000
+======================
+
+✓ HTTP response received
+
+VibrantCloud
+This is the famous VibrantCloud you've heard so much about.
+
+
+
