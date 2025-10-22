@@ -1,4 +1,5 @@
 #include "packets.h"
+#include <stdlib.h>  // For system() calls
 
 //ipv4
 #define ICMP_PROTOCOL 1
@@ -26,6 +27,15 @@
 #define UDP_HEADER_SIZE 8
 #define DNS_HEADER_SIZE 12
 #define DNS_PAYLOAD_SIZE 100
+
+//tcp/http
+#define TCP_PROTOCOL 6
+#define HTTP_PORT 80
+#define TCP_HEADER_SIZE 20
+#define TCP_SYN 0x02
+#define TCP_ACK 0x10
+#define TCP_SYN_ACK 0x12
+#define TCP_WINDOW_SIZE 8192
 
 
 
@@ -66,8 +76,8 @@ int main() {
     
     int result = send_f(ip);
     
-    if (result == 0) {
-        printf("Packet sent successfully via Layer 3\r\n");
+    if (result > 0) {
+        printf("✓ Packet sent successfully via Layer 3 (%d bytes)\r\n", result);
     } else {
         printf("✗ Failed to send packet (error: %d)\r\n", result);
     }
@@ -112,7 +122,7 @@ int main() {
     
     printf("Sending Ethernet frame with ICMP payload...\n");
     
-    int result2 = sendp(eth, "eth0");
+    int result2 = sendp(eth, "enp0s3");
     
     if (result2 == 0) {
         printf("Packet sent successfully via Layer 2!\n");
@@ -236,40 +246,368 @@ int main() {
     free(dns_udp);
     free(dns_ip);
     
-    // Create IPv4 packet for vibrantcloud.org ping
-    ipv4_t* vibrant_ip_pkt = create_ipv4(src_ip, vibrant_ip, ICMP_PROTOCOL, 
-                                         IP_HEADER_SIZE + ICMP_HEADER_SIZE, TTL, 
-                                         IDENTIFICATION, TOS, FLAGS, FRAGMENT_OFFSET);
-    if (!vibrant_ip_pkt) {
-        printf("Failed to create IPv4 packet for vibrantcloud.org\n");
+    printf("\n=== Comprehensive ICMP Testing to vibrantcloud.org ===\n");
+    printf("Target IP: %d.%d.%d.%d\n", vibrant_ip[0], vibrant_ip[1], vibrant_ip[2], vibrant_ip[3]);
+    
+    // Test 1: send_f() - Layer 3 routing
+    printf("\n--- Test 1: send_f() Layer 3 Routing ---\n");
+    
+    ipv4_t* test1_ip = create_ipv4(src_ip, vibrant_ip, ICMP_PROTOCOL, 
+                                   IP_HEADER_SIZE + ICMP_HEADER_SIZE, TTL, 
+                                   IDENTIFICATION, TOS, FLAGS, FRAGMENT_OFFSET);
+    if (!test1_ip) {
+        printf("Failed to create IPv4 packet for Test 1\n");
         return 1;
     }
     
-    // Create ICMP ping for vibrantcloud.org
-    icmp_t* vibrant_icmp = create_icmp(vibrant_ip_pkt, PING_TYPE, PING_CODE, PING_ID, 3, "ping", 4);
-    if (!vibrant_icmp) {
-        printf("Failed to create ICMP packet for vibrantcloud.org\n");
-        free(vibrant_ip_pkt);
+    icmp_t* test1_icmp = create_icmp(test1_ip, PING_TYPE, PING_CODE, PING_ID, 1, "ping", 4);
+    if (!test1_icmp) {
+        printf("Failed to create ICMP packet for Test 1\n");
+        free(test1_ip);
         return 1;
     }
     
-    // Stack IP and ICMP
-    vibrant_ip_pkt = STACK(vibrant_ip_pkt, vibrant_icmp);
+    test1_ip = STACK(test1_ip, test1_icmp);
     
-    printf("Sending ICMP echo request to 1.1.1.1 (Cloudflare DNS)...\n");
+    printf("Sending ICMP via Layer 3 routing...\n");
+    int test1_result = send_f(test1_ip);
     
-    // Send using Layer 3
-    int vibrant_result = send_f(vibrant_ip_pkt);
-    
-    if (vibrant_result == 0) {
-        printf("✓ Packet sent successfully to vibrantcloud.org via Layer 3\n");
+    if (test1_result > 0) {
+        printf("✓ Test 1 SUCCESS: Layer 3 packet sent (%d bytes)\n", test1_result);
+        printf("  Note: Reply may occur but won't be captured by send_f()\n");
     } else {
-        printf("✗ Failed to send packet to vibrantcloud.org (error: %d)\n", vibrant_result);
+        printf("✗ Test 1 FAILED: Layer 3 send error (%d)\n", test1_result);
     }
     
-    // Cleanup
-    free(vibrant_icmp);
-    free(vibrant_ip_pkt);
+    // Test 2: sendp() - Layer 2 direct
+    printf("\n--- Test 2: sendp() Layer 2 Direct ---\n");
+    
+    // Real MAC addresses from your system
+    uint8_t real_src_mac[6] = {0x08, 0x00, 0x27, 0x28, 0xb0, 0xf2};  // Your enp0s3 MAC
+    uint8_t real_dst_mac[6] = {0x52, 0x55, 0x0a, 0x00, 0x02, 0x02};  // Gateway MAC
+    
+    ether_t* test2_eth = create_ether(real_dst_mac, real_src_mac, IPv4_ETYPE);
+    if (!test2_eth) {
+        printf("Failed to create Ethernet frame for Test 2\n");
+        free(test1_icmp);
+        free(test1_ip);
+        return 1;
+    }
+    
+    ipv4_t* test2_ip = create_ipv4(src_ip, vibrant_ip, ICMP_PROTOCOL,
+                                   IP_HEADER_SIZE + ICMP_HEADER_SIZE, TTL,
+                                   IDENTIFICATION, TOS, FLAGS, FRAGMENT_OFFSET);
+    if (!test2_ip) {
+        printf("Failed to create IPv4 packet for Test 2\n");
+        free(test2_eth);
+        free(test1_icmp);
+        free(test1_ip);
+        return 1;
+    }
+    
+    icmp_t* test2_icmp = create_icmp(test2_ip, PING_TYPE, PING_CODE, PING_ID, 2, "ping", 4);
+    if (!test2_icmp) {
+        printf("Failed to create ICMP packet for Test 2\n");
+        free(test2_ip);
+        free(test2_eth);
+        free(test1_icmp);
+        free(test1_ip);
+        return 1;
+    }
+    
+    // Stack: Ethernet -> IP -> ICMP
+    test2_eth = STACK(test2_eth, STACK(test2_ip, test2_icmp));
+    
+    printf("Sending ICMP via Layer 2 direct (real MACs)...\n");
+    printf("  Src MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", 
+           real_src_mac[0], real_src_mac[1], real_src_mac[2],
+           real_src_mac[3], real_src_mac[4], real_src_mac[5]);
+    printf("  Dst MAC: %02x:%02x:%02x:%02x:%02x:%02x\n",
+           real_dst_mac[0], real_dst_mac[1], real_dst_mac[2],
+           real_dst_mac[3], real_dst_mac[4], real_dst_mac[5]);
+    
+    int test2_result = sendp(test2_eth, "enp0s3");
+    
+    if (test2_result == 0) {
+        printf("✓ Test 2 SUCCESS: Layer 2 packet sent\n");
+        printf("  Note: Reply may occur but won't be captured by sendp()\n");
+    } else {
+        printf("✗ Test 2 FAILED: Layer 2 send error (%d)\n", test2_result);
+    }
+    
+    // Test 3: sr() - Send and capture reply
+    printf("\n--- Test 3: sr() Send and Receive ---\n");
+    
+    ipv4_t* test3_ip = create_ipv4(src_ip, vibrant_ip, ICMP_PROTOCOL,
+                                   IP_HEADER_SIZE + ICMP_HEADER_SIZE, TTL,
+                                   IDENTIFICATION, TOS, FLAGS, FRAGMENT_OFFSET);
+    if (!test3_ip) {
+        printf("Failed to create IPv4 packet for Test 3\n");
+        free(test2_icmp);
+        free(test2_ip);
+        free(test2_eth);
+        free(test1_icmp);
+        free(test1_ip);
+        return 1;
+    }
+    
+    icmp_t* test3_icmp = create_icmp(test3_ip, PING_TYPE, PING_CODE, PING_ID, 3, "ping", 4);
+    if (!test3_icmp) {
+        printf("Failed to create ICMP packet for Test 3\n");
+        free(test3_ip);
+        free(test2_icmp);
+        free(test2_ip);
+        free(test2_eth);
+        free(test1_icmp);
+        free(test1_ip);
+        return 1;
+    }
+    
+    test3_ip = STACK(test3_ip, test3_icmp);
+    
+    printf("Sending ICMP and waiting for reply...\n");
+    ether_t* ping_reply = sr(test3_ip);
+    
+    if (ping_reply) {
+        printf("✓ Test 3 SUCCESS: ICMP reply received!\n");
+        
+        // Parse the ICMP reply
+        if (ping_reply->packet.packet) {
+            ipv4_t* reply_ip = (ipv4_t*)ping_reply->packet.packet;
+            if (reply_ip->packet.packet) {
+                icmp_t* reply_icmp = (icmp_t*)reply_ip->packet.packet;
+                
+                printf("  ICMP Reply Details:\n");
+                printf("    Type: %d (0 = Echo Reply)\n", reply_icmp->type);
+                printf("    Code: %d\n", reply_icmp->code);
+                printf("    ID: %d\n", reply_icmp->id);
+                printf("    Sequence: %d\n", reply_icmp->seq);
+                printf("    From IP: %d.%d.%d.%d\n", 
+                       reply_ip->src_ip[0], reply_ip->src_ip[1], 
+                       reply_ip->src_ip[2], reply_ip->src_ip[3]);
+                
+                if (reply_icmp->type == 0) {
+                    printf("  ✓ Valid ICMP Echo Reply received!\n");
+                } else {
+                    printf("  ⚠ Received ICMP type %d (not Echo Reply)\n", reply_icmp->type);
+                }
+            } else {
+                printf("  ⚠ Reply missing ICMP layer\n");
+            }
+        } else {
+            printf("  ⚠ Reply missing IP layer\n");
+        }
+        
+        free(ping_reply);
+    } else {
+        printf("✗ Test 3 FAILED: No ICMP reply received\n");
+    }
+    
+    // Cleanup all test structures
+    free(test3_icmp);
+    free(test3_ip);
+    free(test2_icmp);
+    free(test2_ip);
+    free(test2_eth);
+    free(test1_icmp);
+    free(test1_ip);
+    
+    printf("\n=== End Comprehensive ICMP Testing ===\n");
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////
+    
+    printf("\nPress Enter to continue to TCP HTTP test...");
+    getchar();
+    
+    printf("\n=== Testing TCP HTTP GET to vibrantcloud.org ===\n");
+    
+    // Step 0: Set firewall rule to prevent Linux from sending RST packets
+    printf("Setting firewall rule to prevent RST interference...\n");
+    int firewall_result = system("sudo iptables -A OUTPUT -p tcp -m tcp --tcp-flags RST RST -j DROP");
+    if (firewall_result == 0) {
+        printf("✓ Firewall rule set successfully\n");
+    } else {
+        printf("⚠ Warning: Failed to set firewall rule (error: %d)\n", firewall_result);
+        printf("  You may need to run this program with sudo privileges\n");
+    }
+    
+    // Step 1: TCP Three-way Handshake
+    printf("Starting TCP three-way handshake...\n");
+    
+    // Generate initial sequence number (random)
+    uint32_t initial_seq = 12345;
+    uint32_t server_seq = 0;
+    uint32_t ack_num = 0;
+    
+    // SYN Packet (Step 1 of handshake)
+    printf("1. Sending SYN packet...\n");
+    
+    ipv4_t* syn_ip = create_ipv4(src_ip, vibrant_ip, TCP_PROTOCOL, 
+                                 IP_HEADER_SIZE + TCP_HEADER_SIZE, TTL,
+                                 IDENTIFICATION, TOS, FLAGS, FRAGMENT_OFFSET);
+    if (!syn_ip) {
+        printf("Failed to create IP packet for SYN\n");
+        return 1;
+    }
+    
+    tcp_t* syn_tcp = create_tcp(syn_ip, 12345, HTTP_PORT, initial_seq, 0, 
+                               TCP_SYN, TCP_WINDOW_SIZE, 0, NULL, 0);
+    if (!syn_tcp) {
+        printf("Failed to create SYN packet\n");
+        free(syn_ip);
+        return 1;
+    }
+    
+    syn_ip = STACK(syn_ip, syn_tcp);
+    
+    // Send SYN and wait for SYN-ACK
+    ether_t* syn_ack_response = sr(syn_ip);
+    
+    if (syn_ack_response) {
+        printf("✓ SYN-ACK received\n");
+        
+        // Parse SYN-ACK to get server sequence number
+        if (syn_ack_response->packet.packet) {
+            ipv4_t* response_ip = (ipv4_t*)syn_ack_response->packet.packet;
+            if (response_ip->packet.packet) {
+                tcp_t* response_tcp = (tcp_t*)response_ip->packet.packet;
+                
+                // Verify it's a SYN-ACK
+                if ((response_tcp->flags & TCP_SYN_ACK) == TCP_SYN_ACK) {
+                    server_seq = response_tcp->seq;
+                    ack_num = response_tcp->ack;
+                    printf("   Server SEQ: %u, ACK: %u\n", server_seq, ack_num);
+                } else {
+                    printf("⚠ Received TCP packet but not SYN-ACK\n");
+                }
+            }
+        }
+        free(syn_ack_response);
+    } else {
+        printf("✗ No SYN-ACK received\n");
+        free(syn_tcp);
+        free(syn_ip);
+        
+        // Cleanup firewall rule before exiting
+        system("sudo iptables -D OUTPUT -p tcp -m tcp --tcp-flags RST RST -j DROP");
+        return 1;
+    }
+    
+    // ACK Packet (Step 3 of handshake)
+    printf("2. Sending ACK packet...\n");
+    
+    ipv4_t* ack_ip = create_ipv4(src_ip, vibrant_ip, TCP_PROTOCOL,
+                                 IP_HEADER_SIZE + TCP_HEADER_SIZE, TTL,
+                                 IDENTIFICATION, TOS, FLAGS, FRAGMENT_OFFSET);
+    if (!ack_ip) {
+        printf("Failed to create IP packet for ACK\n");
+        free(syn_tcp);
+        free(syn_ip);
+        return 1;
+    }
+    
+    tcp_t* ack_tcp = create_tcp(ack_ip, 12345, HTTP_PORT, ack_num, server_seq + 1,
+                               TCP_ACK, TCP_WINDOW_SIZE, 0, NULL, 0);
+    if (!ack_tcp) {
+        printf("Failed to create ACK packet\n");
+        free(ack_ip);
+        free(syn_tcp);
+        free(syn_ip);
+        return 1;
+    }
+    
+    ack_ip = STACK(ack_ip, ack_tcp);
+    
+    // Send ACK (no response expected)
+    int ack_result = send_f(ack_ip);
+    if (ack_result > 0) {
+        printf("✓ ACK sent successfully - TCP connection established! (%d bytes)\n", ack_result);
+    } else {
+        printf("✗ Failed to send ACK (error: %d)\n", ack_result);
+    }
+    
+    // Step 2: HTTP GET Request
+    printf("3. Sending HTTP GET request...\n");
+    
+    // Create HTTP GET request
+    const char* http_request = 
+        "GET /index.html HTTP/1.1\r\n"
+        "Host: vibrantcloud.org\r\n"
+        "Connection: close\r\n"
+        "\r\n";
+    
+    size_t http_len = strlen(http_request);
+    
+    ipv4_t* http_ip = create_ipv4(src_ip, vibrant_ip, TCP_PROTOCOL,
+                                  IP_HEADER_SIZE + TCP_HEADER_SIZE + http_len, TTL,
+                                  IDENTIFICATION, TOS, FLAGS, FRAGMENT_OFFSET);
+    if (!http_ip) {
+        printf("Failed to create IP packet for HTTP\n");
+        free(ack_tcp);
+        free(ack_ip);
+        free(syn_tcp);
+        free(syn_ip);
+        return 1;
+    }
+    
+    tcp_t* http_tcp = create_tcp(http_ip, 12345, HTTP_PORT, ack_num, server_seq + 1,
+                                TCP_ACK, TCP_WINDOW_SIZE, 0, http_request, http_len);
+    if (!http_tcp) {
+        printf("Failed to create HTTP TCP packet\n");
+        free(http_ip);
+        free(ack_tcp);
+        free(ack_ip);
+        free(syn_tcp);
+        free(syn_ip);
+        return 1;
+    }
+    
+    http_ip = STACK(http_ip, http_tcp);
+    
+    // Send HTTP request and wait for response
+    ether_t* http_response = sr(http_ip);
+    
+    if (http_response) {
+        printf("✓ HTTP response received\n");
+        
+        // Parse HTTP response to extract HTML
+        if (http_response->packet.packet) {
+            ipv4_t* response_ip = (ipv4_t*)http_response->packet.packet;
+            if (response_ip->packet.packet) {
+                tcp_t* response_tcp = (tcp_t*)response_ip->packet.packet;
+                
+                // Check if there's HTTP data in the TCP packet
+                if (response_tcp->packet.data && response_tcp->packet.data_len > 0) {
+                    printf("\n=== HTTP Response Content ===\n");
+                    printf("%.*s\n", (int)response_tcp->packet.data_len, (char*)response_tcp->packet.data);
+                    printf("=== End of HTTP Response ===\n");
+                } else {
+                    printf("⚠ HTTP response contains no data\n");
+                }
+            }
+        }
+        free(http_response);
+    } else {
+        printf("✗ No HTTP response received\n");
+    }
+    
+    // Step 3: Remove firewall rule to restore normal TCP behavior
+    printf("Removing firewall rule to restore normal operation...\n");
+    int cleanup_result = system("sudo iptables -D OUTPUT -p tcp -m tcp --tcp-flags RST RST -j DROP");
+    if (cleanup_result == 0) {
+        printf("✓ Firewall rule removed successfully\n");
+    } else {
+        printf("⚠ Warning: Failed to remove firewall rule (error: %d)\n", cleanup_result);
+        printf("  You may need to manually run: sudo iptables -D OUTPUT -p tcp -m tcp --tcp-flags RST RST -j DROP\n");
+    }
+    
+    // Cleanup TCP structures
+    free(http_tcp);
+    free(http_ip);
+    free(ack_tcp);
+    free(ack_ip);
+    free(syn_tcp);
+    free(syn_ip);
     
     return 0;
 }
